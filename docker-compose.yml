@@ -61,8 +61,14 @@ services:
       - coolify # Rede do Traefik no Coolify
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.citacs-web.rule=Host(`acs.citmax.com.br`)"
+      - "traefik.docker.network=coolify"
+      - "traefik.http.routers.citacs-web-http.entrypoints=http"
+      - "traefik.http.routers.citacs-web-http.rule=Host(`acs.citmax.com.br`)"
+      - "traefik.http.routers.citacs-web-http.middlewares=redirect-to-https"
+      - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
       - "traefik.http.routers.citacs-web.entrypoints=https"
+      - "traefik.http.routers.citacs-web.rule=Host(`acs.citmax.com.br`)"
+      - "traefik.http.routers.citacs-web.tls=true"
       - "traefik.http.routers.citacs-web.tls.certresolver=letsencrypt"
       - "traefik.http.services.citacs-web.loadbalancer.server.port=3000"
 
