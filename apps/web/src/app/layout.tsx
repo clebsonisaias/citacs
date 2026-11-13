@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Sidebar } from "@/components/layout/sidebar";
+import { NavProvider } from "@/components/layout/nav-context";
 
 export const metadata: Metadata = {
   title: "CITacs - GenieACS TR-069 + Copilot IA",
@@ -14,11 +15,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="pt-BR" className="dark">
-      <body className="antialiased bg-background text-foreground flex">
-        <Sidebar />
-        <div className="flex-1 flex flex-col min-h-screen overflow-x-hidden">
-          {children}
-        </div>
+      <body className="antialiased bg-background text-foreground flex min-h-screen">
+        <NavProvider>
+          <Sidebar />
+          <div className="flex-1 flex flex-col min-w-0 w-full overflow-x-hidden min-h-screen">
+            {children}
+          </div>
+        </NavProvider>
       </body>
     </html>
   );
