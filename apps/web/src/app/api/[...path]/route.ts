@@ -4,7 +4,9 @@ export const dynamic = "force-dynamic";
 
 async function proxy(request: NextRequest, path: string[]) {
   const backend = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || "http://citacs-api:4000";
-  const url = `${backend}/api/${path.join("/")}${request.nextUrl.search}`;
+  // O Next entrega os segmentos já decodificados; re-codifica para a API não decodificar de novo
+  // (IDs do GenieACS têm "%2D", ex. "00259E-WS7001%2D40-...").
+  const url = `${backend}/api/${path.map(encodeURIComponent).join("/")}${request.nextUrl.search}`;
 
   const headers = new Headers(request.headers);
   headers.delete("host");
