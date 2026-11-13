@@ -1,7 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
-import { CpeDevice, OpticalPower, WifiRadio, WanInterface } from '@citacs/shared';
+import { CpeDevice, OpticalPower } from '@citacs/shared';
+import { achatarGenie, caminhosWifi, detectarDataModel, indicesWifi, normalizarParams, paramsDeGenie } from './cpe-normalizer';
 
 @Injectable()
 export class GenieacsService {
@@ -36,6 +37,8 @@ export class GenieacsService {
             'Device.Optical',
             'InternetGatewayDevice.LANDevice',
             'Device.WiFi',
+            'Device.PPP',
+            'Device.IP',
           ].join(','),
         },
       });
@@ -51,14 +54,24 @@ export class GenieacsService {
    * Busca um dispositivo específico por ID
    */
   async getDeviceById(id: string): Promise<CpeDevice | null> {
+    return (await this.getDeviceComParams(id))?.cpe ?? null;
+  }
+
+  /** CPE normalizada + mapa caminho→valor bruto (para o diagnóstico). */
+  async getDeviceComParams(id: string): Promise<{ cpe: CpeDevice; params: Record<string, string> } | null> {
     try {
-      const response = await this.client.get(`/devices/${encodeURIComponent(id)}`);
-      if (!response.data) return null;
-      return this.normalizeCpe(response.data);
+      const raw = await this.buscarRaw(id);
+      return raw ? { cpe: this.normalizeCpe(raw), params: paramsDeGenie(raw) } : null;
     } catch (error: any) {
       this.logger.error(`Erro ao buscar CPE ${id}: ${error.message}`);
       return null;
     }
+  }
+
+  /** O NBI do GenieACS não tem GET /devices/:id; a busca por id é uma query. */
+  private async buscarRaw(id: string): Promise<any | null> {
+    const { data } = await this.client.get('/devices', { params: { query: JSON.stringify({ _id: id }) } });
+    return data?.[0] ?? null;
   }
 
   /**
@@ -86,34 +99,48 @@ export class GenieacsService {
   }
 
   /**
-   * Altera configurações de Wi-Fi (SSID, Senha, Canal)
-   * Suporta variantes de caminho TR-069 (KeyPassphrase, PreSharedKey)
+   * Altera configurações de Wi-Fi (SSID, Senha, Canal).
+   * O índice da rede e o dialeto (TR-098/TR-181) vêm dos parâmetros reais da CPE:
+   * índice fixo grava na rede errada (a EG8145V5 usa 1 e 5, outras Huawei 1 e 2).
    */
   async setWifiConfig(
     deviceId: string,
     radioBand: '2.4GHz' | '5GHz',
-    config: { ssid?: string; password?: string; channel?: number }
+    config: { ssid?: string; password?: string; channel?: number | 'auto' }
   ): Promise<any> {
     this.logger.log(`Atualizando Wi-Fi (${radioBand}) para CPE ${deviceId}`);
+    const raw = await this.buscarRaw(deviceId);
+    if (!raw) throw new NotFoundException('Dispositivo não encontrado no ACS');
+    const params = paramsDeGenie(raw);
+    const dm = detectarDataModel(params) ?? 'tr098';
+    const { idx24, idx5 } = indicesWifi(params);
+    const idx = radioBand === '5GHz' ? idx5 : idx24;
+    if (idx == null) throw new BadRequestException(`CPE não reportou rede Wi-Fi ${radioBand}`);
+    const c = caminhosWifi(dm, idx);
+
+    // Valor anterior de cada campo alterado (do último Inform que o GenieACS tem),
+    // para desfazer reaplicando `antes` neste mesmo endpoint. A senha nunca é devolvida.
+    // ponytail: rollback só na resposta; histórico persistente quando o Postgres entrar em uso.
+    const autoAtual = /^(1|true)$/.test(params[c.canalAuto] ?? '');
+    const antes: Record<string, unknown> = { band: radioBand };
     const parameterValues: [string, string, string][] = [];
-
-    // TR-098 / TR-181 mapping
-    const is5G = radioBand === '5GHz';
-    const wlanIndex = is5G ? '2' : '1';
-    const base = `InternetGatewayDevice.LANDevice.1.WLANConfiguration.${wlanIndex}`;
-
     if (config.ssid) {
-      parameterValues.push([`${base}.SSID`, config.ssid, 'xsd:string']);
+      antes.ssid = params[c.ssid] ?? null;
+      parameterValues.push([c.ssid, config.ssid, 'xsd:string']);
     }
     if (config.password) {
-      // Compatibilidade Huawei/ZTE/Outros: envia para KeyPassphrase e PreSharedKey
-      parameterValues.push([`${base}.PreSharedKey.1.KeyPassphrase`, config.password, 'xsd:string']);
-      parameterValues.push([`${base}.KeyPassphrase`, config.password, 'xsd:string']);
-      parameterValues.push([`${base}.PreSharedKey.1.PreSharedKey`, config.password, 'xsd:string']);
+      for (const caminho of c.senha) parameterValues.push([caminho, config.password, 'xsd:string']);
     }
-    if (config.channel) {
-      parameterValues.push([`${base}.Channel`, config.channel.toString(), 'xsd:unsignedInt']);
+    if (config.channel === 'auto') {
+      antes.channel = autoAtual ? 'auto' : Number(params[c.canal]) || 'auto';
+      parameterValues.push([c.canalAuto, 'true', 'xsd:boolean']);
+    } else if (config.channel) {
+      antes.channel = autoAtual ? 'auto' : Number(params[c.canal]) || 'auto';
+      // Canal fixo só vale com o automático desligado; senão a CPE ignora ou volta ao auto.
+      parameterValues.push([c.canalAuto, 'false', 'xsd:boolean']);
+      parameterValues.push([c.canal, config.channel.toString(), 'xsd:unsignedInt']);
     }
+    if (!parameterValues.length) throw new BadRequestException('Nada para alterar');
 
     const response = await this.client.post(
       `/devices/${encodeURIComponent(deviceId)}/tasks?timeout=3000&connection_request`,
@@ -122,7 +149,14 @@ export class GenieacsService {
         parameterValues,
       }
     );
-    return response.data;
+    const { password, ...depois } = config;
+    return {
+      // 200 = CPE recebeu agora; 202 = fila até o próximo Inform (CPE atrás de CGNAT não recebe Connection Request).
+      aplicada: response.status === 200,
+      tarefa: response.data,
+      antes,
+      depois: { band: radioBand, ...depois, ...(password ? { password: '(alterada)' } : {}) },
+    };
   }
 
   /**
@@ -131,21 +165,7 @@ export class GenieacsService {
   async getDeviceParametersFlat(deviceId: string): Promise<Array<[string, string, boolean]>> {
     const raw = await this.client.get(`/devices/${encodeURIComponent(deviceId)}`);
     if (!raw.data) return [];
-    
-    const out: Array<[string, string, boolean]> = [];
-    const walk = (node: Record<string, unknown>, path: string) => {
-      for (const [k, v] of Object.entries(node)) {
-        if (k.startsWith('_') || v == null || typeof v !== 'object') continue;
-        const p = path ? `${path}.${k}` : k;
-        const n = v as any;
-        if ('_value' in n) {
-          out.push([p, String(n._value ?? ''), Boolean(n._writable)]);
-        }
-        walk(n as Record<string, unknown>, p);
-      }
-    };
-    walk(raw.data, '');
-    return out;
+    return achatarGenie(raw.data);
   }
 
   /**
@@ -167,17 +187,8 @@ export class GenieacsService {
    */
   private normalizeCpe(raw: any): CpeDevice {
     const id = raw._id || '';
-    const deviceId = raw.DeviceID || {};
-    const info =
-      raw.InternetGatewayDevice?.DeviceInfo ||
-      raw.Device?.DeviceInfo ||
-      {};
-
-    const manufacturer = this.extractValue(info.Manufacturer) || deviceId.Manufacturer || 'Desconhecido';
-    const modelName = this.extractValue(info.ModelName) || deviceId.ProductClass || 'CPE GPON';
-    const serialNumber = this.extractValue(info.SerialNumber) || deviceId.SerialNumber || id.split('-')[2] || id;
-    const softwareVersion = this.extractValue(info.SoftwareVersion) || '1.0.0';
-    const hardwareVersion = this.extractValue(info.HardwareVersion);
+    const p = paramsDeGenie(raw);
+    const n = normalizarParams(p);
 
     const lastInform = raw._lastInform ? new Date(raw._lastInform).toISOString() : new Date().toISOString();
     const registeredAt = raw._registered ? new Date(raw._registered).toISOString() : lastInform;
@@ -186,31 +197,48 @@ export class GenieacsService {
     const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
     const online = raw._lastInform ? new Date(raw._lastInform).getTime() > tenMinutesAgo : false;
 
-    // Extração de potência óptica
-    const optical = this.extractOpticalPower(raw);
+    let status: OpticalPower['status'] = 'unknown';
+    if (n.sinalRx !== null) {
+      if (n.sinalRx >= -24.5 && n.sinalRx <= -8.0) status = 'optimal';
+      else if (n.sinalRx < -24.5 && n.sinalRx >= -27.0) status = 'warning';
+      else status = 'critical';
+    }
 
-    // Extração de Wi-Fi
-    const wifi = this.extractWifi(raw);
-
-    // Extração de WAN / PPPoE
-    const wan = this.extractWan(raw);
+    const temWan = n.wanStatus || n.ipWan || n.pppoeUser;
+    const wanStatus = /^(Connected|Up)$/.test(n.wanStatus ?? '') ? 'Connected'
+      : n.wanStatus === 'Connecting' ? 'Connecting' : 'Disconnected';
 
     return {
       id,
-      serialNumber,
-      manufacturer,
-      modelName,
-      softwareVersion,
-      hardwareVersion,
+      serialNumber: n.serial || p['DeviceID.SerialNumber'] || id.split('-')[2] || id,
+      manufacturer: n.manufacturer || p['DeviceID.Manufacturer'] || 'Desconhecido',
+      modelName: n.model || p['DeviceID.ProductClass'] || 'CPE GPON',
+      softwareVersion: n.firmware || 'N/D',
+      hardwareVersion: n.hardwareVer ?? undefined,
       macAddress: this.extractMacAddress(raw),
-      ipAddress: this.extractIpAddress(raw),
-      pppoeUsername: wan[0]?.name || undefined,
+      ipAddress: n.ipWan ?? undefined,
+      pppoeUsername: n.pppoeUser ?? undefined,
       online,
       lastInform,
       registeredAt,
-      optical,
-      wifi,
-      wan,
+      optical: { rxDbm: n.sinalRx, txDbm: n.sinalTx, status },
+      wifi: n.wifi.map((w) => ({
+        index: Number(w.idx),
+        band: w.banda,
+        ssid: w.ssid ?? '',
+        enabled: w.ativo,
+        channel: w.canal ? w.canal : 'auto',
+        connectedClientsCount: w.clientes ?? undefined,
+      })),
+      wan: temWan
+        ? [{
+            name: n.pppoeUser || 'WAN',
+            type: n.pppoeUser ? 'PPPoE' : 'IPoE',
+            status: wanStatus,
+            ipAddress: n.ipWan ?? undefined,
+            uptimeSeconds: n.wanUptimeSeg ?? undefined,
+          }]
+        : [],
     };
   }
 
@@ -219,102 +247,6 @@ export class GenieacsService {
     if (typeof node._value !== 'undefined') return String(node._value);
     if (typeof node === 'string') return node;
     return undefined;
-  }
-
-  private extractOpticalPower(raw: any): OpticalPower {
-    // Procura por campos de Rx / Tx em caminhos conhecidos de Huawei, ZTE, Fiberhome, etc.
-    let rxValue: number | null = null;
-    let txValue: number | null = null;
-
-    // Heurística de busca no json bruto
-    const searchRxKeys = ['RXPower', 'RxPower', 'OpticalRxPower', 'RxOpticalPower'];
-    const searchTxKeys = ['TXPower', 'TxPower', 'OpticalTxPower', 'TxOpticalPower'];
-
-    const findPower = (obj: any, keys: string[]): number | null => {
-      if (!obj || typeof obj !== 'object') return null;
-      for (const key of Object.keys(obj)) {
-        if (keys.includes(key)) {
-          const val = parseFloat(this.extractValue(obj[key]) || '');
-          if (!isNaN(val)) {
-            // Alguns fabricantes reportam em 0.1 uW ou 0.0001 dBm
-            if (val > 100) return parseFloat((val / 1000).toFixed(2));
-            if (val < -100) return parseFloat((val / 100).toFixed(2));
-            return parseFloat(val.toFixed(2));
-          }
-        }
-        if (typeof obj[key] === 'object') {
-          const nested = findPower(obj[key], keys);
-          if (nested !== null) return nested;
-        }
-      }
-      return null;
-    };
-
-    rxValue = findPower(raw, searchRxKeys);
-    txValue = findPower(raw, searchTxKeys);
-
-    let status: OpticalPower['status'] = 'unknown';
-    if (rxValue !== null) {
-      if (rxValue >= -24.5 && rxValue <= -8.0) {
-        status = 'optimal';
-      } else if (rxValue < -24.5 && rxValue >= -27.0) {
-        status = 'warning';
-      } else {
-        status = 'critical';
-      }
-    }
-
-    return {
-      rxDbm: rxValue,
-      txDbm: txValue,
-      status,
-    };
-  }
-
-  private extractWifi(raw: any): WifiRadio[] {
-    const radios: WifiRadio[] = [];
-    const wlanConfig = raw.InternetGatewayDevice?.LANDevice?.['1']?.WLANConfiguration;
-
-    if (wlanConfig) {
-      Object.keys(wlanConfig).forEach((key, idx) => {
-        if (key.startsWith('_')) return;
-        const conf = wlanConfig[key];
-        const ssid = this.extractValue(conf?.SSID) || `Rede Wi-Fi ${idx + 1}`;
-        const enabled = this.extractValue(conf?.Enable) !== '0';
-        const channelRaw = parseInt(this.extractValue(conf?.Channel) || '0', 10);
-        const band: WifiRadio['band'] = idx === 0 ? '2.4GHz' : '5GHz';
-
-        radios.push({
-          index: idx + 1,
-          band,
-          ssid,
-          enabled,
-          channel: channelRaw === 0 ? 'auto' : channelRaw,
-        });
-      });
-    }
-
-    return radios;
-  }
-
-  private extractWan(raw: any): WanInterface[] {
-    // Normalização simplificada de WAN
-    return [
-      {
-        name: 'Internet_WAN',
-        type: 'PPPoE',
-        status: 'Connected',
-        ipAddress: this.extractIpAddress(raw),
-      },
-    ];
-  }
-
-  private extractIpAddress(raw: any): string | undefined {
-    return (
-      raw._ip ||
-      this.extractValue(raw.InternetGatewayDevice?.WANDevice?.['1']?.WANConnectionDevice?.['1']?.WANIPConnection?.['1']?.ExternalIPAddress) ||
-      this.extractValue(raw.InternetGatewayDevice?.WANDevice?.['1']?.WANConnectionDevice?.['1']?.WANPPPConnection?.['1']?.ExternalIPAddress)
-    );
   }
 
   private extractMacAddress(raw: any): string | undefined {
