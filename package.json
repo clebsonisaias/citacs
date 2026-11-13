@@ -1,0 +1,17 @@
+{
+  "name": "citacs-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "CITacs - Plataforma de Gerenciamento TR-069 (GenieACS) Inteligente com Copilot IA",
+  "scripts": {
+    "dev:api": "pnpm --filter @citacs/api start:dev",
+    "dev:web": "pnpm --filter @citacs/web dev",
+    "dev": "pnpm --parallel --filter @citacs/* dev",
+    "build": "pnpm --recursive run build",
+    "lint": "pnpm --recursive run lint",
+    "test": "pnpm --recursive run test"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2"
+  }
+}

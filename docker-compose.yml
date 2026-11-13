@@ -1,0 +1,79 @@
+services:
+  citacs-postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    container_name: citacs-postgres
+    environment:
+      POSTGRES_USER: citacs
+      POSTGRES_PASSWORD: citacs_secure_pass
+      POSTGRES_DB: citacs
+    volumes:
+      - citacs_pgdata:/var/lib/postgresql/data
+    networks:
+      - citacs-network
+
+  citacs-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    container_name: citacs-redis
+    volumes:
+      - citacs_redisdata:/data
+    networks:
+      - citacs-network
+
+  citacs-api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    container_name: citacs-api
+    depends_on:
+      - citacs-postgres
+      - citacs-redis
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      GENIEACS_NBI_URL: ${GENIEACS_NBI_URL:-http://nbi:7557}
+      DATABASE_URL: postgresql://citacs:citacs_secure_pass@citacs-postgres:5432/citacs?schema=public
+      REDIS_HOST: citacs-redis
+      REDIS_PORT: 6379
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      JWT_SECRET: ${JWT_SECRET:-citacs_secret_key}
+    networks:
+      - citacs-network
+      - mqkobhd3qvrkco4raqdtl5rt # Rede interna do serviço GenieACS no Coolify
+
+  citacs-web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    container_name: citacs-web
+    depends_on:
+      - citacs-api
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      NEXT_PUBLIC_API_URL: http://citacs-api:4000
+    networks:
+      - citacs-network
+      - coolify # Rede do Traefik no Coolify
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.citacs-web.rule=Host(`acs.citmax.com.br`)"
+      - "traefik.http.routers.citacs-web.entrypoints=https"
+      - "traefik.http.routers.citacs-web.tls.certresolver=letsencrypt"
+      - "traefik.http.services.citacs-web.loadbalancer.server.port=3000"
+
+volumes:
+  citacs_pgdata:
+  citacs_redisdata:
+
+networks:
+  citacs-network:
+    driver: bridge
+  mqkobhd3qvrkco4raqdtl5rt:
+    external: true
+  coolify:
+    external: true
