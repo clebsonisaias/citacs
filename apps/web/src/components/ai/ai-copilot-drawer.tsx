@@ -45,6 +45,8 @@ export function AiCopilotDrawer({ isOpen, onClose, selectedCpe }: AiCopilotDrawe
     try {
       const res = await fetch(`/api/ai/diagnose/${encodeURIComponent(selectedCpe.id)}`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tenantId: selectedCpe.tenantId || "citmax" }),
       });
       const data = await res.json();
       setDiagnostic(data);
@@ -88,6 +90,7 @@ export function AiCopilotDrawer({ isOpen, onClose, selectedCpe }: AiCopilotDrawe
         body: JSON.stringify({
           messages: newHistory,
           cpeId: selectedCpe?.id,
+          tenantId: selectedCpe?.tenantId || "citmax",
         }),
       });
       const reply = await res.json();

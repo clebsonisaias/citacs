@@ -12,12 +12,22 @@ import {
 export class AiService {
   private readonly logger = new Logger(AiService.name);
   private openai: OpenAI | null = null;
+  private readonly allowedOpenAiTenants: string[];
 
   constructor(private readonly configService: ConfigService) {
     const apiKey = this.configService.get<string>('OPENAI_API_KEY');
+    const allowed = this.configService.get<string>('OPENAI_ALLOWED_TENANTS') || 'citmax,netgo';
+    this.allowedOpenAiTenants = allowed
+      .toLowerCase()
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean);
+
     if (apiKey) {
       this.openai = new OpenAI({ apiKey });
-      this.logger.log('Provedor de IA OpenAI inicializado com sucesso.');
+      this.logger.log(
+        `Provedor de IA OpenAI inicializado com sucesso. Autorizado exclusivamente para os provedores: [${this.allowedOpenAiTenants.join(', ')}]`
+      );
     } else {
       this.logger.warn(
         'OPENAI_API_KEY não definida. Usando motor analítico heurístico local como fallback.'
@@ -26,14 +36,44 @@ export class AiService {
   }
 
   /**
-   * Diagnostica uma CPE com base em seus parâmetros TR-069
+   * Verifica se o tenant/provedor é autorizado a consumir o token OpenAI da plataforma.
+   * Regra: Exclusivo para CITmax e Netgo (ou conforme OPENAI_ALLOWED_TENANTS).
    */
-  async diagnoseCpe(cpe: CpeDevice): Promise<AiDiagnosticResult> {
+  public isTenantAllowedForOpenAi(tenantId?: string, cpe?: CpeDevice): boolean {
+    if (!this.openai) return false;
+
+    // Se especificado tenantId direto
+    if (tenantId) {
+      const t = tenantId.toLowerCase().trim();
+      return this.allowedOpenAiTenants.some((allowed) => t.includes(allowed));
+    }
+
+    // Se o CPE tem tenantId explícito
+    if (cpe?.tenantId) {
+      const t = cpe.tenantId.toLowerCase().trim();
+      return this.allowedOpenAiTenants.some((allowed) => t.includes(allowed));
+    }
+
+    // Se o CPE possui indicação de provedor no PPPoE ou subscriber
+    if (cpe?.pppoeUsername) {
+      const u = cpe.pppoeUsername.toLowerCase();
+      if (u.includes('netgo') || u.includes('citmax')) return true;
+    }
+
+    // Se não há identificador (uso padrão local/admin), assume o provedor primário CITmax / Netgo
+    return this.allowedOpenAiTenants.includes('citmax') || this.allowedOpenAiTenants.includes('netgo');
+  }
+
+  /**
+   * Diagnostica uma CPE com base em seus parâmetros TR-069
+   * e regras avançadas de diagnóstico de Wi-Fi e fibra (baseado em wifi-optimizer).
+   */
+  async diagnoseCpe(cpe: CpeDevice, tenantId?: string): Promise<AiDiagnosticResult> {
     const issues: string[] = [];
     const suggestedActions: AiSuggestedAction[] = [];
     let severity: AiDiagnosticResult['severity'] = 'healthy';
 
-    // 1. Análise de Sinal Óptico
+    // 1. Análise de Sinal Óptico (Camada Física GPON)
     const rx = cpe.optical?.rxDbm;
     if (rx !== null && rx !== undefined) {
       if (rx < -27.0) {
@@ -78,20 +118,39 @@ export class AiService {
       });
     }
 
-    // 3. Análise de Wi-Fi
+    // 3. Análise de Wi-Fi (Baseado na metodologia wifi-optimizer)
     if (cpe.wifi && cpe.wifi.length > 0) {
       const radio24 = cpe.wifi.find((w) => w.band === '2.4GHz');
       if (radio24 && radio24.enabled) {
         if (radio24.channel === 12 || radio24.channel === 13) {
           issues.push(
-            `Canal Wi-Fi 2.4GHz (${radio24.channel}) pode ser incompatível com dispositivos legados.`
+            `Canal Wi-Fi 2.4GHz (${radio24.channel}) pode ser incompatível com dispositivos clientes legados.`
           );
           suggestedActions.push({
-            id: 'action-fix-wifi-channel',
-            title: 'Mudar Canal 2.4GHz para Automático/Canal 6',
-            description: 'Redefinir o canal para o padrão mais estável.',
+            id: 'action-fix-wifi-channel-24',
+            title: 'Mudar Canal 2.4GHz para Canal 6 (20MHz) [Reversível]',
+            description: 'Redefine para o canal limpo padrão 6 em 20MHz com menor sobreposição espectral.',
             commandType: 'wifiConfig',
-            parameters: { band: '2.4GHz', channel: 6 },
+            parameters: { band: '2.4GHz', channel: 6, rollbackChannel: radio24.channel },
+            riskLevel: 'low',
+          });
+        }
+      }
+
+      const radio5 = cpe.wifi.find((w) => w.band === '5GHz');
+      if (radio5 && radio5.enabled) {
+        const ch = typeof radio5.channel === 'number' ? radio5.channel : 0;
+        // Detecção de canais DFS (52 a 140) que sofrem queda por radar meteorológico/aeronáutico
+        if (ch >= 52 && ch <= 140) {
+          issues.push(
+            `Canal 5GHz (${ch}) está na faixa DFS (radar). Sujeito a desconexões súbitas caso o AP detecte pulsos de radar.`
+          );
+          suggestedActions.push({
+            id: 'action-fix-wifi-channel-5g',
+            title: 'Migrar 5GHz para Canal Não-DFS (Canal 36 ou 149) [Reversível]',
+            description: 'Evita paradas de transmissão obrigatórias por varredura de radar DFS.',
+            commandType: 'wifiConfig',
+            parameters: { band: '5GHz', channel: 36, rollbackChannel: ch },
             riskLevel: 'low',
           });
         }
@@ -110,11 +169,12 @@ export class AiService {
       });
     }
 
-    // Se temos OpenAI configurada, enriquecemos a análise com LLM
-    if (this.openai) {
+    // Se o provedor (CITmax ou Netgo) for autorizado para OpenAI, enriquecemos com LLM
+    const canUseOpenAi = this.isTenantAllowedForOpenAi(tenantId, cpe);
+    if (canUseOpenAi && this.openai) {
       try {
-        const prompt = `Você é um engenheiro de NOC especializado em redes GPON, TR-069 e Wi-Fi de provedores de internet (ISPs).
-Analise os dados desta ONT e emita um laudo técnico conciso em português do Brasil:
+        const prompt = `Você é um engenheiro sênior de NOC especializado em redes GPON, TR-069 e otimização avançada de Wi-Fi (metodologia evidence-based wifi-optimizer) para os provedores CITmax e Netgo.
+Analise a telemetria desta ONT e emita um laudo técnico conciso em português do Brasil:
 - Fabricante/Modelo: ${cpe.manufacturer} ${cpe.modelName}
 - Serial: ${cpe.serialNumber}
 - Status: ${cpe.online ? 'Online' : 'Offline'}
@@ -124,13 +184,16 @@ Analise os dados desta ONT e emita um laudo técnico conciso em português do Br
 - Wi-Fi Configurado: ${JSON.stringify(cpe.wifi)}
 - Problemas já identificados: ${issues.join(' | ') || 'Nenhum aparente'}
 
-Retorne um resumo de 2 a 3 parágrafos explicando a causa raiz e o impacto para a experiência de navegação do cliente.`;
+Instruções específicas:
+1. Separe claramente se a causa raiz é da Camada de Rádio Wi-Fi (interferência/canal/DFS/band steering), da Camada GPON/Fibra (atenuação), ou WAN/ISP.
+2. Recomende somente ações seguras e reversíveis com valor de rollback.
+3. Retorne de 2 a 3 parágrafos objetivos para o técnico de suporte.`;
 
         const completion = await this.openai.chat.completions.create({
           model: 'gpt-4o-mini',
           messages: [{ role: 'user', content: prompt }],
           temperature: 0.3,
-          max_tokens: 300,
+          max_tokens: 350,
         });
 
         const rootCauseAnalysis = completion.choices[0]?.message?.content || 'Análise automática indisponível.';
@@ -144,7 +207,7 @@ Retorne um resumo de 2 a 3 parágrafos explicando a causa raiz e o impacto para 
           identifiedIssues: issues.length ? issues : ['Nenhum problema anômalo detectado.'],
           rootCauseAnalysis,
           suggestedActions,
-          generatedReport: `Relatório Técnico de Diagnóstico CITacs - ONT ${cpe.serialNumber}\nStatus: ${severity.toUpperCase()}\n\n${rootCauseAnalysis}`,
+          generatedReport: `Relatório Técnico NOC (OpenAI - Provedor Autorizado)\nONT: ${cpe.serialNumber}\nStatus: ${severity.toUpperCase()}\n\n${rootCauseAnalysis}`,
           analyzedAt: new Date().toISOString(),
         };
       } catch (err: any) {
@@ -177,12 +240,24 @@ Retorne um resumo de 2 a 3 parágrafos explicando a causa raiz e o impacto para 
   /**
    * Chat interativo com o Copilot sobre um dispositivo ou suporte geral
    */
-  async chatWithCopilot(messages: AiChatMessage[], cpeContext?: CpeDevice): Promise<AiChatMessage> {
-    const systemPrompt = `Você é o Copilot de IA do CITacs, assistente especialista em redes de telecomunicações, GPON, TR-069 e suporte técnico a provedores de internet.
-Responda de forma direta, técnica, precisa e prestativa em Português do Brasil.
+  async chatWithCopilot(
+    messages: AiChatMessage[],
+    cpeContext?: CpeDevice,
+    tenantId?: string
+  ): Promise<AiChatMessage> {
+    const canUseOpenAi = this.isTenantAllowedForOpenAi(tenantId, cpeContext);
+
+    const systemPrompt = `Você é o Copilot de IA de NOC do CITacs, especialista sênior em redes GPON, TR-069 e otimização avançada de Wi-Fi para os provedores CITmax e Netgo.
+Metodologia Técnica (baseada em evidence-based wifi-optimizer):
+1. Separação de Camadas: Sempre diferencie problemas de camada Wi-Fi (interferência de canais, canais DFS 5GHz, largura de banda 20/40/80MHz, atenuação de sinal) de problemas de fibra/GPON (Rx < -25 dBm) ou rota WAN/ISP.
+2. Segurança e Reversibilidade: Toda alteração proposta de canal ou configuração deve ser justificada por evidência e acompanhada de valor de rollback.
+3. Melhores Práticas de Rádio:
+   - 2.4GHz: Priorize estabilidade com 20MHz e canais sem sobreposição (1, 6 e 11). Evite canais 12/13.
+   - 5GHz: Identifique se canais entre 52 e 140 estão sob interferência de radar DFS e sugira migração para 36-48 ou 149-161.
+4. Responda em Português do Brasil com clareza, concisão e foco prático para técnicos de suporte e NOC.
 ${cpeContext ? `Contexto atual da CPE em análise:\n${JSON.stringify(cpeContext, null, 2)}` : ''}`;
 
-    if (this.openai) {
+    if (canUseOpenAi && this.openai) {
       try {
         const formattedMessages: OpenAI.ChatCompletionMessageParam[] = [
           { role: 'system', content: systemPrompt },
@@ -211,9 +286,11 @@ ${cpeContext ? `Contexto atual da CPE em análise:\n${JSON.stringify(cpeContext,
       }
     }
 
-    // Fallback de chat se OpenAI não estiver configurada
+    // Fallback de chat se não autorizado para OpenAI ou chave ausente
     const lastUserMessage = messages[messages.length - 1]?.content.toLowerCase() || '';
-    let reply = 'Estou operando no modo de análise local. ';
+    let reply = !canUseOpenAi 
+      ? 'Aviso: O motor OpenAI avançado está autorizado exclusivamente para os provedores CITmax e Netgo. Operando em modo heurístico local. '
+      : 'Estou operando no modo de análise local. ';
 
     if (lastUserMessage.includes('sinal') || lastUserMessage.includes('potencia') || lastUserMessage.includes('optico')) {
       reply += `O sinal óptico da ONT está em ${cpeContext?.optical?.rxDbm ?? 'N/D'} dBm. Valores entre -8 e -24.5 dBm são considerados ideais em redes GPON classe B+/C+.`;

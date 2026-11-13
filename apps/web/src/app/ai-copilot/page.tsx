@@ -17,11 +17,12 @@ import {
 import { AiChatMessage } from "@citacs/shared";
 
 export default function AiCopilotPage() {
+  const [activeTenant, setActiveTenant] = useState<'citmax' | 'netgo'>('citmax');
   const [messages, setMessages] = useState<AiChatMessage[]>([
     {
       id: "intro-1",
       role: "assistant",
-      content: `👋 Olá! Sou o **Copilot IA de NOC do CITacs**.\n\nEstou conectado ao **GenieACS** e monitorando a telemetria das ONTs na rede. Como posso ajudar sua equipe técnica hoje?`,
+      content: `👋 Olá! Sou o **Copilot IA de NOC do CITacs**.\n\nEstou conectado ao **GenieACS** com o modelo **OpenAI** ativo para **CITmax** e **Netgo**, pronto para diagnóstico avançado de sinal óptico e otimização de Wi-Fi. Como posso ajudar sua equipe técnica hoje?`,
       timestamp: new Date().toISOString(),
     },
   ]);
@@ -32,7 +33,7 @@ export default function AiCopilotPage() {
     "Quais ONTs estão com atenuação óptica pior que -27 dBm?",
     "Detectar quedas de conexão massivas na última hora",
     "Como otimizar a interferência de Wi-Fi 2.4GHz na rede?",
-    "Gerar checklist de atendimento técnico para cliente sem internet",
+    "Identificar canais 5GHz em faixa de radar DFS com instabilidade",
   ];
 
   const handleSend = async (text: string) => {
@@ -54,7 +55,10 @@ export default function AiCopilotPage() {
       const res = await fetch("/api/ai/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: newHistory }),
+        body: JSON.stringify({
+          messages: newHistory,
+          tenantId: activeTenant,
+        }),
       });
       const data = await res.json();
       setMessages((prev) => [...prev, data]);
@@ -71,22 +75,47 @@ export default function AiCopilotPage() {
 
       <main className="flex-1 flex flex-col p-6 max-w-5xl mx-auto w-full space-y-4">
         {/* Banner Top */}
-        <div className="p-5 rounded-2xl bg-gradient-to-r from-card via-card to-primary/10 border border-border flex items-center justify-between">
+        <div className="p-5 rounded-2xl bg-gradient-to-r from-card via-card to-primary/10 border border-border flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 rounded-2xl bg-primary/20 text-primary flex items-center justify-center border border-primary/30">
               <Sparkles className="w-6 h-6" />
             </div>
             <div>
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                Central de IA & Assistente de NOC
+                Central de IA &amp; Assistente de NOC
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">
-                  Online
+                  OpenAI Ativa
                 </span>
               </h2>
               <p className="text-xs text-muted-foreground">
-                Tire dúvidas técnicas, analise dados GPON e dispare diagnósticos automatizados.
+                Tire dúvidas técnicas, analise dados GPON e dispare diagnósticos de Wi-Fi baseados em evidência.
               </p>
             </div>
+          </div>
+
+          {/* Provedor Selector */}
+          <div className="flex items-center gap-2 bg-secondary/80 p-1 rounded-xl border border-border">
+            <span className="text-xs text-muted-foreground px-2 font-medium">Provedor:</span>
+            <button
+              onClick={() => setActiveTenant('citmax')}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                activeTenant === 'citmax'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              CITmax
+            </button>
+            <button
+              onClick={() => setActiveTenant('netgo')}
+              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                activeTenant === 'netgo'
+                  ? 'bg-primary text-primary-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Netgo
+            </button>
           </div>
         </div>
 

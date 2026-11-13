@@ -11,14 +11,17 @@ export class AiController {
   ) {}
 
   @Post('diagnose/:cpeId')
-  async diagnose(@Param('cpeId') cpeId: string) {
+  async diagnose(
+    @Param('cpeId') cpeId: string,
+    @Body('tenantId') tenantId?: string
+  ) {
     const cpe = await this.genieacsService.getDeviceById(cpeId);
     if (!cpe) {
       return {
         error: 'Dispositivo não encontrado no ACS',
       };
     }
-    return this.aiService.diagnoseCpe(cpe);
+    return this.aiService.diagnoseCpe(cpe, tenantId);
   }
 
   @Post('chat')
@@ -27,12 +30,17 @@ export class AiController {
     body: {
       messages: AiChatMessage[];
       cpeId?: string;
+      tenantId?: string;
     }
   ) {
     let cpeContext = undefined;
     if (body.cpeId) {
       cpeContext = await this.genieacsService.getDeviceById(body.cpeId);
     }
-    return this.aiService.chatWithCopilot(body.messages || [], cpeContext || undefined);
+    return this.aiService.chatWithCopilot(
+      body.messages || [],
+      cpeContext || undefined,
+      body.tenantId
+    );
   }
 }

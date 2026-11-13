@@ -10,11 +10,17 @@ interface HeaderProps {
 export function Header({ onOpenCopilot, copilotOpen }: HeaderProps) {
   return (
     <header className="h-16 border-b border-border bg-card/40 backdrop-blur-md px-6 flex items-center justify-between sticky top-0 z-30">
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
           GenieACS CWMP :7550 Ativo
         </span>
+
+        <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs bg-primary/10 text-primary border border-primary/20">
+          <span className="font-semibold">Provedores:</span>
+          <span>CITmax &amp; Netgo</span>
+          <span className="text-[10px] px-1.5 py-0.2 rounded bg-primary/30 text-white font-mono font-bold">OpenAI Ativa</span>
+        </div>
       </div>
 
       <div className="flex items-center gap-3">

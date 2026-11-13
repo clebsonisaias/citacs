@@ -38,6 +38,7 @@ services:
       REDIS_HOST: citacs-redis
       REDIS_PORT: 6379
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_ALLOWED_TENANTS: ${OPENAI_ALLOWED_TENANTS:-citmax,netgo}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       JWT_SECRET: ${JWT_SECRET:-citacs_secret_key}
     networks:
