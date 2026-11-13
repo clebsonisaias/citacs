@@ -27,5 +27,6 @@ COPY --from=builder /app/apps/web/public ./apps/web/public
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/apps/web/node_modules ./apps/web/node_modules
 
+WORKDIR /app/apps/web
 EXPOSE 3000
-CMD ["node_modules/.bin/next", "start", "apps/web", "-p", "3000"]
+CMD ["node_modules/.bin/next", "start", "-p", "3000"]
