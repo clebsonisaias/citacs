@@ -38,7 +38,7 @@ export class CpeController {
       band: '2.4GHz' | '5GHz';
       ssid?: string;
       password?: string;
-      channel?: number;
+      channel?: number | 'auto';
     }
   ) {
     return this.cpeService.configureWifi(id, body.band, body);

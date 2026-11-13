@@ -40,7 +40,7 @@ export class CpeService {
   async configureWifi(
     id: string,
     radioBand: '2.4GHz' | '5GHz',
-    config: { ssid?: string; password?: string; channel?: number }
+    config: { ssid?: string; password?: string; channel?: number | 'auto' }
   ): Promise<any> {
     return this.genieacsService.setWifiConfig(id, radioBand, config);
   }

@@ -7,6 +7,7 @@ import {
   AiSuggestedAction,
   AiChatMessage,
 } from '@citacs/shared';
+import { diagnosticar } from '../genieacs/diagnostico';
 
 @Injectable()
 export class AiService {
@@ -68,106 +69,35 @@ export class AiService {
    * Diagnostica uma CPE com base em seus parâmetros TR-069
    * e regras avançadas de diagnóstico de Wi-Fi e fibra (baseado em wifi-optimizer).
    */
-  async diagnoseCpe(cpe: CpeDevice, tenantId?: string): Promise<AiDiagnosticResult> {
-    const issues: string[] = [];
-    const suggestedActions: AiSuggestedAction[] = [];
-    let severity: AiDiagnosticResult['severity'] = 'healthy';
+  async diagnoseCpe(cpe: CpeDevice, params: Record<string, string>, tenantId?: string): Promise<AiDiagnosticResult> {
+    const diag = diagnosticar(params, { online: cpe.online, ultimoInform: cpe.lastInform });
+    const issues = diag.achados.map((a) => `[${a.camada}] ${a.mensagem}`);
+    const gravs = new Set(diag.achados.map((a) => a.gravidade));
+    const severity: AiDiagnosticResult['severity'] =
+      !cpe.online || gravs.has('alta') ? 'critical' : gravs.has('media') ? 'warning' : gravs.has('baixa') ? 'info' : 'healthy';
 
-    // 1. Análise de Sinal Óptico (Camada Física GPON)
-    const rx = cpe.optical?.rxDbm;
-    if (rx !== null && rx !== undefined) {
-      if (rx < -27.0) {
-        severity = 'critical';
-        issues.push(
-          `Atenuação óptica crítica: Sinal Rx em ${rx} dBm (abaixo do limiar aceitável de -25 dBm). Alto risco de perda de pacotes e desautenticação GPON.`
-        );
-        suggestedActions.push({
-          id: 'action-fiber-check',
-          title: 'Ordem de Reparo de Fibra',
-          description: 'Enviar equipe para limpeza de conector ou fusão na CTO.',
-          commandType: 'externalDispatch',
-          parameters: { reason: 'optical_loss', rxDbm: rx },
-          riskLevel: 'low',
-        });
-      } else if (rx < -24.5) {
-        if ((severity as string) !== 'critical') severity = 'warning';
-        issues.push(
-          `Atenuação óptica em alerta: Sinal Rx em ${rx} dBm. Próximo ao limite operacional.`
-        );
-      } else if (rx > -8.0) {
-        if ((severity as string) !== 'critical') severity = 'warning';
-        issues.push(
-          `Saturação de receptor óptico: Sinal Rx muito alto (${rx} dBm). Possível ausência de splitter na rede PON.`
-        );
-      }
-    }
-
-    // 2. Análise de Status de Conexão
-    if (!cpe.online) {
-      severity = 'critical';
-      issues.push(
-        `Dispositivo Offline: Último contato TR-069 registrado em ${new Date(cpe.lastInform).toLocaleString('pt-BR')}.`
-      );
+    // Só ações com evidência e reversíveis (wifi-optimizer). Nada de reboot como receita genérica.
+    const suggestedActions: AiSuggestedAction[] = diag.propostas.map((p) => ({
+      id: p.id,
+      title: p.titulo,
+      description: `${p.motivo} Tradeoff: ${p.tradeoff} Para desfazer: canal ${p.reversao.channel}.`,
+      commandType: 'wifiConfig',
+      parameters: { ...p.parametros, rollback: p.reversao },
+      riskLevel: 'low',
+    }));
+    if (diag.achados.some((a) => a.camada === 'fibra' && a.gravidade === 'alta')) {
       suggestedActions.push({
-        id: 'action-ping-gateway',
-        title: 'Verificar Rota de Rede',
-        description: 'Tentar comunicação direta via ICMP no IP da WAN.',
-        commandType: 'pingDiagnostic',
-        parameters: { target: cpe.ipAddress },
+        id: 'action-fiber-check',
+        title: 'Ordem de Reparo de Fibra',
+        description: 'Enviar equipe para limpeza de conector ou fusão na CTO.',
+        commandType: 'externalDispatch',
+        parameters: { reason: 'optical_loss', rxDbm: cpe.optical?.rxDbm },
         riskLevel: 'low',
       });
     }
-
-    // 3. Análise de Wi-Fi (Baseado na metodologia wifi-optimizer)
-    if (cpe.wifi && cpe.wifi.length > 0) {
-      const radio24 = cpe.wifi.find((w) => w.band === '2.4GHz');
-      if (radio24 && radio24.enabled) {
-        if (radio24.channel === 12 || radio24.channel === 13) {
-          issues.push(
-            `Canal Wi-Fi 2.4GHz (${radio24.channel}) pode ser incompatível com dispositivos clientes legados.`
-          );
-          suggestedActions.push({
-            id: 'action-fix-wifi-channel-24',
-            title: 'Mudar Canal 2.4GHz para Canal 6 (20MHz) [Reversível]',
-            description: 'Redefine para o canal limpo padrão 6 em 20MHz com menor sobreposição espectral.',
-            commandType: 'wifiConfig',
-            parameters: { band: '2.4GHz', channel: 6, rollbackChannel: radio24.channel },
-            riskLevel: 'low',
-          });
-        }
-      }
-
-      const radio5 = cpe.wifi.find((w) => w.band === '5GHz');
-      if (radio5 && radio5.enabled) {
-        const ch = typeof radio5.channel === 'number' ? radio5.channel : 0;
-        // Detecção de canais DFS (52 a 140) que sofrem queda por radar meteorológico/aeronáutico
-        if (ch >= 52 && ch <= 140) {
-          issues.push(
-            `Canal 5GHz (${ch}) está na faixa DFS (radar). Sujeito a desconexões súbitas caso o AP detecte pulsos de radar.`
-          );
-          suggestedActions.push({
-            id: 'action-fix-wifi-channel-5g',
-            title: 'Migrar 5GHz para Canal Não-DFS (Canal 36 ou 149) [Reversível]',
-            description: 'Evita paradas de transmissão obrigatórias por varredura de radar DFS.',
-            commandType: 'wifiConfig',
-            parameters: { band: '5GHz', channel: 36, rollbackChannel: ch },
-            riskLevel: 'low',
-          });
-        }
-      }
-    }
-
-    // Ação comum: Reboot preventivo se houver instabilidade
-    if (severity === 'warning' || severity === 'critical') {
-      suggestedActions.push({
-        id: 'action-reboot',
-        title: 'Reiniciar Dispositivo (Reboot)',
-        description: 'Enviar comando TR-069 para reinicialização suave da ONT.',
-        commandType: 'reboot',
-        parameters: { cpeId: cpe.id },
-        riskLevel: 'medium',
-      });
-    }
+    const detalhe = diag.achados
+      .map((a) => `• [${a.camada}] ${a.mensagem}\n  Evidência: ${a.evidencia.join('; ')}\n  Próximo teste: ${a.proximoTeste}${a.evitar ? `\n  Evitar: ${a.evitar}` : ''}`)
+      .join('\n');
 
     // Se o provedor (CITmax ou Netgo) for autorizado para OpenAI, enriquecemos com LLM
     const canUseOpenAi = this.isTenantAllowedForOpenAi(tenantId, cpe);
@@ -176,18 +106,19 @@ export class AiService {
         const prompt = `Você é um engenheiro sênior de NOC especializado em redes GPON, TR-069 e otimização avançada de Wi-Fi (metodologia evidence-based wifi-optimizer) para os provedores CITmax e Netgo.
 Analise a telemetria desta ONT e emita um laudo técnico conciso em português do Brasil:
 - Fabricante/Modelo: ${cpe.manufacturer} ${cpe.modelName}
-- Serial: ${cpe.serialNumber}
 - Status: ${cpe.online ? 'Online' : 'Offline'}
 - Último Inform: ${cpe.lastInform}
 - Potência Óptica Rx: ${cpe.optical?.rxDbm ?? 'N/D'} dBm
 - Potência Óptica Tx: ${cpe.optical?.txDbm ?? 'N/D'} dBm
 - Wi-Fi Configurado: ${JSON.stringify(cpe.wifi)}
-- Problemas já identificados: ${issues.join(' | ') || 'Nenhum aparente'}
+- Diagnóstico por camadas (regras locais, já com evidência):
+${detalhe || 'Nenhuma anomalia nos dados do ACS.'}
 
 Instruções específicas:
-1. Separe claramente se a causa raiz é da Camada de Rádio Wi-Fi (interferência/canal/DFS/band steering), da Camada GPON/Fibra (atenuação), ou WAN/ISP.
-2. Recomende somente ações seguras e reversíveis com valor de rollback.
-3. Retorne de 2 a 3 parágrafos objetivos para o técnico de suporte.`;
+1. Parta do diagnóstico por camadas acima; não contradiga a evidência nem invente medições que não estão aqui.
+2. Diga a camada provável, a confiança, a evidência a favor e contra, e o menor próximo teste.
+3. Proponha só mudanças que testam a causa, uma por vez, com o valor para desfazer. Não recomende canal universal nem reboot genérico.
+4. Retorne de 2 a 3 parágrafos objetivos para o técnico de suporte. Nenhuma configuração foi alterada.`;
 
         const completion = await this.openai.chat.completions.create({
           model: 'gpt-4o-mini',
@@ -221,10 +152,7 @@ Instruções específicas:
         ? 'Dispositivo operando em parâmetros ideais de sinal óptico e conectividade.'
         : `Atenção requerida: ${issues.length} apontamento(s) de telemetria.`;
 
-    const rootCauseAnalysis =
-      severity === 'healthy'
-        ? 'Nenhuma anomalia de sinal óptico ou de canal Wi-Fi detectada. A ONT está respondendo aos períodos normais de Inform.'
-        : `Identificamos que os principais parâmetros afetados são:\n${issues.map((i) => `• ${i}`).join('\n')}\nRecomenda-se executar as ações sugeridas abaixo para normalizar a conexão.`;
+    const rootCauseAnalysis = detalhe ? `${diag.resumo}\n\n${detalhe}` : diag.resumo;
 
     return {
       summary,

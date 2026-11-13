@@ -15,13 +15,13 @@ export class AiController {
     @Param('cpeId') cpeId: string,
     @Body('tenantId') tenantId?: string
   ) {
-    const cpe = await this.genieacsService.getDeviceById(cpeId);
-    if (!cpe) {
+    const found = await this.genieacsService.getDeviceComParams(cpeId);
+    if (!found) {
       return {
         error: 'Dispositivo não encontrado no ACS',
       };
     }
-    return this.aiService.diagnoseCpe(cpe, tenantId);
+    return this.aiService.diagnoseCpe(found.cpe, found.params, tenantId);
   }
 
   @Post('chat')
