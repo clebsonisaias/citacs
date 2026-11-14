@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, Logger, NotFoundException } from '@nes
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
 import { CpeDevice, OpticalPower } from '@citacs/shared';
-import { achatarGenie, caminhosWifi, detectarDataModel, indicesWifi, normalizarParams, paramsDeGenie } from './cpe-normalizer';
+import { achatarGenie, caminhosWifi, detectarDataModel, estaOnline, indicesWifi, normalizarParams, paramsDeGenie } from './cpe-normalizer';
 
 @Injectable()
 export class GenieacsService {
@@ -39,6 +39,9 @@ export class GenieacsService {
             'Device.WiFi',
             'Device.PPP',
             'Device.IP',
+            // Intervalo de inform: decide quando o roteador conta como offline.
+            'InternetGatewayDevice.ManagementServer.PeriodicInformInterval',
+            'Device.ManagementServer.PeriodicInformInterval',
           ].join(','),
         },
       });
@@ -204,9 +207,7 @@ export class GenieacsService {
     const lastInform = raw._lastInform ? new Date(raw._lastInform).toISOString() : new Date().toISOString();
     const registeredAt = raw._registered ? new Date(raw._registered).toISOString() : lastInform;
 
-    // Calculo de online (se informou nos ultimos 10 minutos)
-    const tenMinutesAgo = Date.now() - 10 * 60 * 1000;
-    const online = raw._lastInform ? new Date(raw._lastInform).getTime() > tenMinutesAgo : false;
+    const online = estaOnline(p, raw._lastInform);
 
     let status: OpticalPower['status'] = 'unknown';
     if (n.sinalRx !== null) {

@@ -1,7 +1,7 @@
 // node --test test/  (Node >= 22.18 roda o .ts importado direto, sem build)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { paramsDeGenie, normalizarParams, normalizarDbm, indicesWifi, caminhosWifi } from '../src/modules/genieacs/cpe-normalizer.ts';
+import { paramsDeGenie, normalizarParams, normalizarDbm, indicesWifi, caminhosWifi, estaOnline } from '../src/modules/genieacs/cpe-normalizer.ts';
 
 // Monta o JSON aninhado do GenieACS ({ a: { b: { _value } } }) a partir de caminho→valor.
 function genie(flat) {
@@ -88,4 +88,17 @@ test('normalizarDbm: decimal nunca reescala; inteiro fora de faixa desce por 10'
   assert.equal(normalizarDbm('250', 10), 2.5);
   assert.equal(normalizarDbm('0'), null);
   assert.equal(normalizarDbm(''), null);
+});
+
+test('online: usa 2 intervalos de inform do roteador, 30 min se não souber', () => {
+  const agora = Date.parse('2026-11-14T07:28:00Z');
+  const ha = (min) => new Date(agora - min * 60_000).toISOString();
+  const p900 = { 'InternetGatewayDevice.ManagementServer.PeriodicInformInterval': '900' };
+  assert.equal(estaOnline(p900, ha(14), agora), true); // o caso do Teobaldo: 14 min com intervalo de 15
+  assert.equal(estaOnline(p900, ha(31), agora), false);
+  assert.equal(estaOnline({ 'Device.ManagementServer.PeriodicInformInterval': '3600' }, ha(90), agora), true);
+  assert.equal(estaOnline({}, ha(29), agora), true);
+  assert.equal(estaOnline({}, ha(31), agora), false);
+  assert.equal(estaOnline({ 'InternetGatewayDevice.ManagementServer.PeriodicInformInterval': '0' }, ha(29), agora), true);
+  assert.equal(estaOnline(p900, undefined, agora), false);
 });

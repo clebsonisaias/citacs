@@ -27,6 +27,17 @@ export function achatarGenie(raw: any): Array<[string, string, boolean]> {
   return out;
 }
 
+/**
+ * Online = falou com o ACS dentro de 2 intervalos de inform do próprio roteador (30 min se o intervalo não veio).
+ * Uma janela fixa menor que o intervalo (era 10 min para roteadores de 15) marcava roteador bom como offline.
+ */
+export function estaOnline(p: Params, lastInform: string | null | undefined, agora = Date.now()): boolean {
+  if (!lastInform) return false;
+  const s = Number(p['InternetGatewayDevice.ManagementServer.PeriodicInformInterval'] ?? p['Device.ManagementServer.PeriodicInformInterval']);
+  const janelaMs = (s > 0 ? 2 * s : 1800) * 1000;
+  return agora - new Date(lastInform).getTime() < janelaMs;
+}
+
 export function paramsDeGenie(raw: any): Params {
   const p: Params = {};
   for (const [k, v] of achatarGenie(raw)) p[k] = v;
