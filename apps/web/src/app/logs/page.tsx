@@ -1,182 +1,146 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Header } from "@/components/layout/header";
-import { 
-  FileText, 
-  Search, 
-  Filter, 
-  CheckCircle2, 
-  Clock, 
-  Radio, 
-  Sparkles, 
-  UserCheck, 
-  ShieldCheck,
-  RefreshCw,
-  Terminal
-} from "lucide-react";
+import { FileText, Loader2, RefreshCw, Search } from "lucide-react";
 
-interface AuditLog {
-  id: string;
-  timestamp: string;
-  user: string;
-  provider: "CITmax" | "Netgo";
-  action: string;
-  cpeSerial: string;
-  status: "success" | "pending" | "failed";
-  details: string;
+interface Registro {
+  id: number;
+  quando: string;
+  login: string;
+  ip: string | null;
+  acao: string;
+  alvo: string | null;
+  resultado: "ok" | "erro" | "bloqueado";
+  detalhe: {
+    corpo?: Record<string, unknown>;
+    motivo?: string;
+    erro?: string;
+    antes?: Record<string, unknown>;
+    depois?: Record<string, unknown>;
+  } | null;
 }
 
-const MOCK_LOGS: AuditLog[] = [
-  {
-    id: "log-1",
-    timestamp: "2026-11-13T06:54:25Z",
-    user: "admin@citmax.com.br",
-    provider: "CITmax",
-    action: "AI Copilot NOC Chat",
-    cpeSerial: "HWTC12345678",
-    status: "success",
-    details: "Consulta de diagnóstico de atenuação e espectro de canal DFS 5GHz.",
-  },
-  {
-    id: "log-2",
-    timestamp: "2026-11-13T06:40:12Z",
-    user: "suporte@netgo.psi.br",
-    provider: "Netgo",
-    action: "Wi-Fi Reconfiguration (TR-069)",
-    cpeSerial: "ZTEG98765432",
-    status: "success",
-    details: "Alteração de SSID e senha do rádio 5GHz com aplicação imediata.",
-  },
-  {
-    id: "log-3",
-    timestamp: "2026-11-13T06:22:05Z",
-    user: "admin@citmax.com.br",
-    provider: "CITmax",
-    action: "Device Reboot Command",
-    cpeSerial: "HWTC12345678",
-    status: "success",
-    details: "Comando de reinicialização remota enviado via Connection Request :7547.",
-  },
-  {
-    id: "log-4",
-    timestamp: "2026-11-13T05:15:40Z",
-    user: "sistema_seed@genieacs",
-    provider: "CITmax",
-    action: "Preset Provisioning",
-    cpeSerial: "ITBS45678901",
-    status: "success",
-    details: "Aplicação do preset de inventário automático no evento 0 BOOTSTRAP.",
-  }
-];
+const COR: Record<Registro["resultado"], string> = {
+  ok: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
+  erro: "text-red-300 bg-red-500/10 border-red-500/20",
+  bloqueado: "text-amber-300 bg-amber-400/10 border-amber-400/30",
+};
+
+const quando = (iso: string) => new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "medium" });
+
+/** Uma linha legível do que foi pedido e do que aconteceu. */
+function resumo(r: Registro) {
+  const d = r.detalhe ?? {};
+  const partes: string[] = [];
+  if (d.corpo) partes.push(Object.entries(d.corpo).map(([k, v]) => `${k}: ${String(v)}`).join(", "));
+  if (d.antes && d.depois) partes.push(`antes ${JSON.stringify(d.antes)} → depois ${JSON.stringify(d.depois)}`);
+  if (d.motivo) partes.push(d.motivo);
+  if (d.erro) partes.push(`erro: ${d.erro}`);
+  return partes.join(" · ");
+}
 
 export default function LogsPage() {
-  const [search, setSearch] = useState("");
-  const [providerFilter, setProviderFilter] = useState<"all" | "CITmax" | "Netgo">("all");
+  const [lista, setLista] = useState<Registro[] | null>(null);
+  const [erro, setErro] = useState("");
+  const [busca, setBusca] = useState("");
 
-  const filtered = MOCK_LOGS.filter((log) => {
-    const matchesSearch = 
-      log.action.toLowerCase().includes(search.toLowerCase()) ||
-      log.cpeSerial.toLowerCase().includes(search.toLowerCase()) ||
-      log.user.toLowerCase().includes(search.toLowerCase());
-    const matchesProvider = providerFilter === "all" || log.provider === providerFilter;
-    return matchesSearch && matchesProvider;
-  });
+  const carregar = useCallback(async () => {
+    setErro("");
+    const r = await fetch("/api/auditoria?limite=500").catch(() => null);
+    if (!r) return setErro("Sem conexão com o servidor.");
+    if (r.status === 403) return setErro("Só o administrador vê a auditoria.");
+    if (!r.ok) return setErro(`Não foi possível carregar (erro ${r.status}).`);
+    setLista(await r.json());
+  }, []);
+
+  useEffect(() => {
+    carregar();
+  }, [carregar]);
+
+  const termo = busca.trim().toLowerCase();
+  const filtrados = (lista ?? []).filter(
+    (r) => !termo || [r.login, r.acao, r.alvo, r.resultado, r.ip].some((c) => c?.toLowerCase().includes(termo)),
+  );
 
   return (
     <>
       <Header />
-
-      <main className="flex-1 p-4 sm:p-6 max-w-6xl mx-auto w-full space-y-6">
-        {/* Banner Top */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border">
+      <main className="flex-1 p-4 sm:p-6 max-w-6xl mx-auto w-full space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-4 border-b border-border">
           <div>
             <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-primary/20 text-primary text-xs font-mono font-medium mb-1">
               <FileText className="w-3.5 h-3.5" />
-              Trilha de Auditoria &amp; Comandos
+              Quem fez o quê
             </div>
-            <h1 className="text-xl sm:text-2xl font-bold text-white">
-              Logs &amp; Atividades de TR-069
-            </h1>
+            <h1 className="text-xl sm:text-2xl font-bold text-white">Auditoria</h1>
             <p className="text-xs sm:text-sm text-muted-foreground">
-              Registro completo de comandos remotos, diagnósticos de IA e alterações de configuração em CPEs.
+              Entradas no painel e toda alteração em roteador ou na equipe, com autor, IP e resultado. Senhas nunca são gravadas.
             </p>
           </div>
-
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setProviderFilter("all")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                providerFilter === "all" ? "bg-primary text-primary-foreground" : "bg-card border border-border text-muted-foreground hover:bg-secondary"
-              }`}
-            >
-              Todos
-            </button>
-            <button
-              onClick={() => setProviderFilter("CITmax")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                providerFilter === "CITmax" ? "bg-primary text-primary-foreground" : "bg-card border border-border text-muted-foreground hover:bg-secondary"
-              }`}
-            >
-              CITmax
-            </button>
-            <button
-              onClick={() => setProviderFilter("Netgo")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                providerFilter === "Netgo" ? "bg-primary text-primary-foreground" : "bg-card border border-border text-muted-foreground hover:bg-secondary"
-              }`}
-            >
-              Netgo
+            <label className="relative">
+              <Search className="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+              <input
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+                placeholder="Pessoa, ação, roteador, IP"
+                aria-label="Filtrar registros"
+                className="h-9 pl-8 pr-3 w-56 rounded-lg bg-card border border-border text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              />
+            </label>
+            <button onClick={carregar} className="h-9 px-3 rounded-lg border border-border text-sm inline-flex items-center gap-1.5 hover:bg-secondary" aria-label="Atualizar">
+              <RefreshCw className="w-4 h-4" /> Atualizar
             </button>
           </div>
         </div>
 
-        {/* Search */}
-        <div className="relative">
-          <Search className="w-4 h-4 text-muted-foreground absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            placeholder="Filtrar logs por comando, serial da ONT ou usuário..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-card border border-border text-xs sm:text-sm text-foreground focus:outline-none focus:border-primary/60 transition-colors"
-          />
-        </div>
+        {erro && <div role="alert" className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">{erro}</div>}
 
-        {/* Logs Table / Cards */}
-        <div className="space-y-3">
-          {filtered.map((log) => (
-            <div
-              key={log.id}
-              className="p-4 sm:p-5 rounded-2xl bg-card border border-border hover:border-primary/40 transition-all flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs sm:text-sm"
-            >
-              <div className="space-y-1.5 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-semibold text-white">{log.action}</span>
-                  <span className="text-[10px] px-2 py-0.5 rounded bg-primary/20 text-primary font-mono font-bold">
-                    {log.provider}
-                  </span>
-                  <span className="text-muted-foreground font-mono">ONT: {log.cpeSerial}</span>
-                  <span className="text-emerald-400 flex items-center gap-1 text-[11px]">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    Executado com Sucesso
-                  </span>
-                </div>
-                <p className="text-muted-foreground leading-relaxed">{log.details}</p>
-              </div>
-
-              <div className="flex items-center gap-3 shrink-0 text-xs text-muted-foreground border-t md:border-t-0 pt-2 md:pt-0 border-border/60">
-                <div className="flex items-center gap-1">
-                  <UserCheck className="w-3.5 h-3.5 text-primary" />
-                  <span className="truncate max-w-[140px]">{log.user}</span>
-                </div>
-                <div className="flex items-center gap-1 font-mono text-[11px]">
-                  <Clock className="w-3.5 h-3.5" />
-                  <span>{new Date(log.timestamp).toLocaleTimeString("pt-BR")}</span>
-                </div>
-              </div>
-            </div>
-          ))}
+        <div className="rounded-xl border border-border bg-card/40 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-xs text-muted-foreground border-b border-border">
+              <tr>
+                <th className="text-left font-medium px-4 py-3">Quando</th>
+                <th className="text-left font-medium px-4 py-3">Quem</th>
+                <th className="text-left font-medium px-4 py-3">Ação</th>
+                <th className="text-left font-medium px-4 py-3">Alvo</th>
+                <th className="text-left font-medium px-4 py-3">Resultado</th>
+                <th className="text-left font-medium px-4 py-3">Detalhe</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lista === null && !erro && (
+                <tr>
+                  <td colSpan={6} className="px-4 py-6 text-center text-muted-foreground">
+                    <Loader2 className="w-4 h-4 animate-spin inline mr-2" /> Carregando…
+                  </td>
+                </tr>
+              )}
+              {lista && filtrados.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-4 py-6 text-center text-muted-foreground">
+                    {lista.length ? "Nada com esse filtro." : "Nenhum registro ainda."}
+                  </td>
+                </tr>
+              )}
+              {filtrados.map((r) => (
+                <tr key={r.id} className="border-b border-border/60 last:border-0 align-top">
+                  <td className="px-4 py-2.5 text-xs text-muted-foreground whitespace-nowrap">{quando(r.quando)}</td>
+                  <td className="px-4 py-2.5">
+                    <div className="font-mono text-xs text-foreground">{r.login}</div>
+                    {r.ip && <div className="font-mono text-[11px] text-muted-foreground">{r.ip}</div>}
+                  </td>
+                  <td className="px-4 py-2.5 text-xs text-foreground whitespace-nowrap">{r.acao}</td>
+                  <td className="px-4 py-2.5 font-mono text-[11px] text-muted-foreground break-all">{r.alvo ?? "—"}</td>
+                  <td className="px-4 py-2.5">
+                    <span className={`inline-block px-2 py-0.5 rounded-md border text-[11px] font-semibold ${COR[r.resultado]}`}>{r.resultado}</span>
+                  </td>
+                  <td className="px-4 py-2.5 text-xs text-muted-foreground max-w-md">{resumo(r)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </main>
     </>
