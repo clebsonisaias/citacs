@@ -5,6 +5,7 @@ import { CpeModule } from './modules/cpe/cpe.module';
 import { AiModule } from './modules/ai/ai.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { SgpModule } from './modules/sgp/sgp.module';
+import { IntegracaoModule } from './modules/integracao/integracao.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { SgpModule } from './modules/sgp/sgp.module';
     CpeModule,
     AiModule,
     SgpModule,
+    IntegracaoModule,
   ],
 })
 export class AppModule {}

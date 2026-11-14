@@ -13,5 +13,7 @@ import { AuditoriaInterceptor, AuditoriaService } from './auditoria.service';
     { provide: APP_GUARD, useClass: AuthGuard },
     { provide: APP_INTERCEPTOR, useClass: AuditoriaInterceptor },
   ],
+  // A integração (outro sistema) grava na mesma trilha de auditoria.
+  exports: [AuditoriaService],
 })
 export class AuthModule {}

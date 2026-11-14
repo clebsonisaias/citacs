@@ -68,6 +68,17 @@ export class GenieacsService {
     }
   }
 
+  /**
+   * Ids dos aparelhos que casam com a consulta (no máximo `limite`). Para a
+   * integração: quem chama confere cada candidato e recusa se houver mais de um.
+   */
+  async buscarIds(query: Record<string, unknown>, limite = 3): Promise<string[]> {
+    const { data } = await this.client.get('/devices', {
+      params: { query: JSON.stringify(query), projection: '_id', limit: limite },
+    });
+    return (data ?? []).map((d: { _id: string }) => d._id).filter(Boolean);
+  }
+
   /** O NBI do GenieACS não tem GET /devices/:id; a busca por id é uma query. */
   private async buscarRaw(id: string): Promise<any | null> {
     const { data } = await this.client.get('/devices', { params: { query: JSON.stringify({ _id: id }) } });
