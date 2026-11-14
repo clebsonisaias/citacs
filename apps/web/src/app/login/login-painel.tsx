@@ -1,8 +1,24 @@
 "use client";
 
-import { useEffect, useState, type CSSProperties, type FormEvent } from "react";
+import { useEffect, useState, type CSSProperties, type FormEvent, type InputHTMLAttributes } from "react";
 import { useSearchParams } from "next/navigation";
+import { Eye, EyeOff } from "lucide-react";
 import s from "./login.module.css";
+
+/** Campo de senha com o botão de olho para mostrar o que foi digitado. */
+function CampoSenha({ rotulo, ver, alternar, ...input }: { rotulo: string; ver: boolean; alternar: () => void } & InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <label className={s.campo}>
+      <span>{rotulo}</span>
+      <div className={s.comOlho}>
+        <input {...input} type={ver ? "text" : "password"} autoCapitalize="none" spellCheck={false} />
+        <button type="button" className={s.olho} onClick={alternar} aria-label={ver ? "Esconder senha" : "Mostrar senha"} aria-pressed={ver}>
+          {ver ? <EyeOff size={18} /> : <Eye size={18} />}
+        </button>
+      </div>
+    </label>
+  );
+}
 
 type Estado = "ocioso" | "enviando" | "ok" | "erro" | "trocar";
 
@@ -47,6 +63,8 @@ export function LoginPainel() {
   const [nova, setNova] = useState("");
   const [confirma, setConfirma] = useState("");
   const [nome, setNome] = useState("");
+  const [ver, setVer] = useState(false);
+  const alternarVer = () => setVer((v) => !v);
 
   // Já tem sessão: entra direto, ou cai na troca de senha se ainda for a temporária.
   useEffect(() => {
@@ -210,19 +228,18 @@ export function LoginPainel() {
                 autoFocus
               />
             </label>
-            <label className={s.campo}>
-              <span>Senha</span>
-              <input
-                type="password"
-                name="password"
-                autoComplete="current-password"
-                required
-                maxLength={200}
-                value={senha}
-                onChange={(e) => setSenha(e.target.value)}
-                disabled={ocupado || estado === "ok"}
-              />
-            </label>
+            <CampoSenha
+              rotulo="Senha"
+              ver={ver}
+              alternar={alternarVer}
+              name="password"
+              autoComplete="current-password"
+              required
+              maxLength={200}
+              value={senha}
+              onChange={(e) => setSenha(e.target.value)}
+              disabled={ocupado || estado === "ok"}
+            />
             {erro && (
               <p className={s.erro} role="alert">
                 {erro}
@@ -239,24 +256,15 @@ export function LoginPainel() {
               {nome ? `${nome}, este` : "Este"} é o seu primeiro acesso com uma senha temporária. Escolha uma senha só sua, com 12 caracteres ou mais.
             </p>
             {pedirTemporaria && (
-              <label className={s.campo}>
-                <span>Senha temporária</span>
-                <input type="password" autoComplete="current-password" required value={temporaria} onChange={(e) => setTemporaria(e.target.value)} />
-              </label>
+              <CampoSenha rotulo="Senha temporária" ver={ver} alternar={alternarVer} autoComplete="current-password" required value={temporaria} onChange={(e) => setTemporaria(e.target.value)} />
             )}
-            <label className={s.campo}>
-              <span>Senha nova</span>
-              <input type="password" autoComplete="new-password" required minLength={12} maxLength={200} value={nova} onChange={(e) => setNova(e.target.value)} disabled={ocupado} autoFocus />
-            </label>
+            <CampoSenha rotulo={`Senha nova · ${nova.length} de 12+`} ver={ver} alternar={alternarVer} autoComplete="new-password" required minLength={12} maxLength={200} value={nova} onChange={(e) => setNova(e.target.value)} disabled={ocupado} autoFocus />
             <div className={s.forca} data-nivel={forca} aria-hidden="true">
               {[0, 1, 2, 3].map((b) => (
                 <i key={b} className={b < forca ? s.barraAcesa : undefined} />
               ))}
             </div>
-            <label className={s.campo}>
-              <span>Repita a senha nova</span>
-              <input type="password" autoComplete="new-password" required maxLength={200} value={confirma} onChange={(e) => setConfirma(e.target.value)} disabled={ocupado} />
-            </label>
+            <CampoSenha rotulo="Repita a senha nova" ver={ver} alternar={alternarVer} autoComplete="new-password" required maxLength={200} value={confirma} onChange={(e) => setConfirma(e.target.value)} disabled={ocupado} />
             {erro && (
               <p className={s.erro} role="alert">
                 {erro}

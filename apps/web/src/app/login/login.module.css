@@ -462,6 +462,40 @@
   opacity: 0.55;
 }
 
+.comOlho {
+  position: relative;
+}
+
+.comOlho input {
+  padding-right: 48px;
+}
+
+.olho {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 46px;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 0 5px 5px 0;
+  background: none;
+  color: #6f8196;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.olho:hover,
+.olho[aria-pressed="true"] {
+  color: var(--ciano);
+}
+
+.olho:focus-visible {
+  outline: 2px solid var(--ciano);
+  outline-offset: -2px;
+}
+
 .aviso {
   margin: 0 0 2px;
   font-size: 13px;
