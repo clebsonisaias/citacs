@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Param, Query, Body } from '@nestjs/common';
 import { CpeService } from './cpe.service';
+import { Escrita } from '../auth/auth.guard';
 
 @Controller('cpes')
 export class CpeController {
@@ -20,16 +21,19 @@ export class CpeController {
     return this.cpeService.getParameters(id);
   }
 
+  @Escrita()
   @Post(':id/reboot')
   async reboot(@Param('id') id: string) {
     return this.cpeService.reboot(id);
   }
 
+  @Escrita()
   @Post(':id/factory-reset')
   async factoryReset(@Param('id') id: string) {
     return this.cpeService.factoryReset(id);
   }
 
+  @Escrita()
   @Post(':id/wifi')
   async configureWifi(
     @Param('id') id: string,

@@ -21,7 +21,8 @@ async function proxy(request: NextRequest, path: string[]) {
       body,
     });
 
-    const resBody = await res.blob();
+    // 204/205/304 não podem ter corpo: o construtor da Response recusa até um corpo vazio.
+    const resBody = [204, 205, 304].includes(res.status) ? null : await res.blob();
     return new NextResponse(resBody, {
       status: res.status,
       statusText: res.statusText,
