@@ -45,6 +45,10 @@ services:
       SGP_APP: ${SGP_APP:-citas}
       SGP_TOKEN: ${SGP_TOKEN:-}
       JWT_SECRET: ${JWT_SECRET:-citacs_secret_key}
+      # Integração do AtendeHub (só leitura). Só o sha256 da chave:
+      # INTEGRACAO_CHAVES=atendehub:<hash>. Vazia = rota recusa todo mundo.
+      INTEGRACAO_CHAVES: ${INTEGRACAO_CHAVES:-}
+      INTEGRACAO_LIMITE_MIN: ${INTEGRACAO_LIMITE_MIN:-60}
     networks:
       - citacs-network
       - mqkobhd3qvrkco4raqdtl5rt # Rede interna do serviço GenieACS no Coolify
