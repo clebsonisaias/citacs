@@ -1,13 +1,15 @@
 import { Controller, Post, Body, Param, Get } from '@nestjs/common';
 import { AiService } from './ai.service';
 import { GenieacsService } from '../genieacs/genieacs.service';
+import { SgpService } from '../sgp/sgp.service';
 import { AiChatMessage } from '@citacs/shared';
 
 @Controller('ai')
 export class AiController {
   constructor(
     private readonly aiService: AiService,
-    private readonly genieacsService: GenieacsService
+    private readonly genieacsService: GenieacsService,
+    private readonly sgp: SgpService
   ) {}
 
   @Post('diagnose/:cpeId')
@@ -21,7 +23,9 @@ export class AiController {
         error: 'Dispositivo não encontrado no ACS',
       };
     }
-    return this.aiService.diagnoseCpe(found.cpe, found.params, tenantId);
+    // Com o plano do SGP, o diagnóstico compara a velocidade negociada com a contratada.
+    const planoMbps = await this.sgp.planoMbpsDoIp(found.cpe.ipAddress);
+    return this.aiService.diagnoseCpe(found.cpe, found.params, tenantId, planoMbps);
   }
 
   @Post('chat')

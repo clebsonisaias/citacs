@@ -5,6 +5,7 @@ import { Header } from "@/components/layout/header";
 import { AiCopilotDrawer } from "@/components/ai/ai-copilot-drawer";
 import { OpticalGauge } from "@/components/cpe/optical-gauge";
 import { WifiManager } from "@/components/cpe/wifi-manager";
+import { ClienteCard } from "@/components/cpe/cliente-card";
 import { CpeDevice, AiDiagnosticResult } from "@citacs/shared";
 import Link from "next/link";
 import { 
@@ -176,8 +177,9 @@ export default function CpeDetailsPage({ params }: { params: Promise<{ id: strin
 
         {/* Informações Centrais em Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Coluna 1: Sinal Óptico e Rede */}
+          {/* Coluna 1: Cliente, Sinal Óptico e Rede */}
           <div className="space-y-6">
+            <ClienteCard cpeId={cpeId} loginRoteador={cpe?.pppoeUsername} />
             <div className="p-5 rounded-2xl bg-card border border-border space-y-4">
               <h3 className="font-semibold text-sm text-white flex items-center gap-2">
                 <Radio className="w-4 h-4 text-primary" />

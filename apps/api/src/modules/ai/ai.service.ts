@@ -69,8 +69,8 @@ export class AiService {
    * Diagnostica uma CPE com base em seus parâmetros TR-069
    * e regras avançadas de diagnóstico de Wi-Fi e fibra (baseado em wifi-optimizer).
    */
-  async diagnoseCpe(cpe: CpeDevice, params: Record<string, string>, tenantId?: string): Promise<AiDiagnosticResult> {
-    const diag = diagnosticar(params, { online: cpe.online, ultimoInform: cpe.lastInform });
+  async diagnoseCpe(cpe: CpeDevice, params: Record<string, string>, tenantId?: string, planoMbps?: number): Promise<AiDiagnosticResult> {
+    const diag = diagnosticar(params, { online: cpe.online, ultimoInform: cpe.lastInform, planoMbps });
     const issues = diag.achados.map((a) => `[${a.camada}] ${a.mensagem}`);
     const gravs = new Set(diag.achados.map((a) => a.gravidade));
     const severity: AiDiagnosticResult['severity'] =
