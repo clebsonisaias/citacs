@@ -14,6 +14,9 @@ async function bootstrap() {
   });
 
   app.setGlobalPrefix('api');
+  // No rolling update o Coolify manda SIGTERM ao container antigo: fecha o
+  // servidor terminando as requisições em andamento, sem cortar ninguém.
+  app.enableShutdownHooks();
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
 
   // Documentação Swagger
