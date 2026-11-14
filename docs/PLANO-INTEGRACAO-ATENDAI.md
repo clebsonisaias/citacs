@@ -69,6 +69,42 @@ Caminhos relativos a `apps/api/src`, salvo indicação.
 5. **Testes**: Vitest em `apps/api/tests/`, molde `brazmovelTool.test.ts` (`vi.mock` do serviço +
    `executarTool`).
 
+## Visão: o que o CITacs e a IA fazem juntos (além do AtendAI)
+
+Princípio: as regras (`diagnostico.ts`) acham o problema; a IA explica e cruza dados. A IA não
+inventa diagnóstico.
+
+| Área | O quê | Depende de |
+|---|---|---|
+| Atendimento | Olhar o roteador antes de abrir chamado (a ferramenta `diagnostico_wifi` acima) | Frota no ACS |
+| Atendimento | Triagem antes da visita: fibra ruim → técnico com material de conector; Wi-Fi fraco → repetidor/mesh; tudo normal → aparelho do cliente | Frota no ACS |
+| Atendimento | Prova do conserto: comparar sinal, erros e quedas antes e depois da OS | Histórico |
+| NOC | **Falha em massa**: ONTs da mesma CTO/porta PON caem juntas → um incidente só, e o AtendAI responde "falha na sua região" | Frota no ACS + CTO/PON do SGP |
+| NOC | Varredura diária da frota: sinal piorando aos poucos, reinício sozinho, PPPoE caindo, 2.4 GHz congestionado | Histórico |
+| NOC | Perguntas em português sobre a rede ("quantos clientes da NetGo com sinal abaixo de -25?") | Frota no ACS + LLM |
+| Comercial | Upgrade com justificativa: 15+ aparelhos, cobertura ruim, plano sempre no limite → mesh ou plano maior | Histórico |
+| Ajustes | Trocar canal, mudar banda, reiniciar: uma mudança por vez, com reversão e medição antes/depois | Furo do executor do AtendAI fechado + confirmação |
+
+### Ordem sugerida
+
+1. **Frota no ACS.** Hoje só o Teobaldo está lá. A ONT de bancada do Darius não chegou: o backup
+   importado ignorou o bloco TR-069. Se a OLT for Huawei, verificar o perfil TR-069 da OLT para
+   mandar a URL do ACS a todas as ONTs sem ir em cada uma (**confirmar no modelo da OLT**).
+2. **Histórico de leituras.** O GenieACS guarda só o último valor. Gravar uma amostra a cada contato
+   (sinal, erros e pacotes do Wi-Fi, uptime, aparelhos), como o Maxxi fazia. Exemplo do porquê: a
+   medição de 13/11 deu 0,006% de erros no 2.4 GHz do Teobaldo, contra 0,065% de média em 21 dias;
+   sem histórico não dá para saber em que horários piora.
+3. **Falha em massa** + **ferramenta `diagnostico_wifi` no AtendAI** (as que mais cortam custo).
+4. Varredura diária, triagem de OS, comercial.
+5. Ajustes automáticos (último, pelas regras de "Fora do escopo").
+
+### Limites conhecidos
+
+- Atrás de CGNAT o dado é do último contato (5 a 15 min): sempre "lido às", nunca "agora".
+- Cada modelo mostra uma parte: o WS7001-40 não faz varredura de vizinhos (só IPPing/TraceRoute),
+  então interferência aparece só pela taxa de erro.
+- Nome dos aparelhos da casa é dado pessoal: só depois de verificar o titular.
+
 ## Fora do escopo por enquanto (de propósito)
 
 - **Ferramentas de escrita** (trocar canal, reiniciar). Só depois de fechar o furo conhecido do
