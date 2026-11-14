@@ -40,6 +40,10 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_ALLOWED_TENANTS: ${OPENAI_ALLOWED_TENANTS:-citmax,netgo}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      # SGP da NetGo (só leitura). Sem SGP_TOKEN a integração fica desligada.
+      SGP_URL: ${SGP_URL:-https://conect.sgp.net.br}
+      SGP_APP: ${SGP_APP:-citas}
+      SGP_TOKEN: ${SGP_TOKEN:-}
       JWT_SECRET: ${JWT_SECRET:-citacs_secret_key}
     networks:
       - citacs-network
