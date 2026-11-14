@@ -142,15 +142,6 @@ export function LoginPainel() {
     <main className={s.palco}>
       <div className={s.grade} aria-hidden="true" />
       <svg className={s.fibras} viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
-        <defs>
-          <filter id="brilho-fibra" filterUnits="userSpaceOnUse" x="-100" y="-100" width="1400" height="1000">
-            <feGaussianBlur stdDeviation="3.5" result="borrado" />
-            <feMerge>
-              <feMergeNode in="borrado" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-        </defs>
         {[
           "M-40 120 C 300 140, 520 300, 820 380",
           "M-40 260 C 260 250, 560 360, 820 400",
@@ -159,12 +150,17 @@ export function LoginPainel() {
           "M-40 760 C 320 700, 600 520, 820 460",
           "M1240 80 C 1080 160, 980 300, 900 380",
           "M1240 720 C 1100 640, 980 520, 900 460",
-        ].map((d, i) => (
-          <g key={d}>
-            <path d={d} className={s.fibra} pathLength={1000} />
-            <path d={d} className={s.pulso} pathLength={1000} filter="url(#brilho-fibra)" style={{ animationDelay: `${i * 0.9}s`, animationDuration: `${4 + (i % 3)}s` }} />
-          </g>
-        ))}
+        ].map((d, i) => {
+          const ritmoPulso = { animationDelay: `${i * 0.9}s`, animationDuration: `${4 + (i % 3)}s` };
+          // Brilho = traço largo e translúcido por baixo do pulso (sem filtro de desfoque, que pesa por quadro).
+          return (
+            <g key={d}>
+              <path d={d} className={s.fibra} pathLength={1000} />
+              <path d={d} className={s.halo} pathLength={1000} style={ritmoPulso} />
+              <path d={d} className={s.pulso} pathLength={1000} style={ritmoPulso} />
+            </g>
+          );
+        })}
       </svg>
 
       <section className={s.marca}>
