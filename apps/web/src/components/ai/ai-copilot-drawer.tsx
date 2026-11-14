@@ -27,8 +27,8 @@ export function AiCopilotDrawer({ isOpen, onClose, selectedCpe }: AiCopilotDrawe
       id: "welcome",
       role: "assistant",
       content: selectedCpe 
-        ? `Olá! Estou analisando a ONT **${selectedCpe.serialNumber}** (${selectedCpe.manufacturer} ${selectedCpe.modelName}). Posso diagnosticar problemas de sinal óptico, Wi-Fi ou sugerir comandos TR-069. Como posso ajudar?`
-        : "Olá! Sou o Copilot de IA do CITacs. Posso te ajudar a identificar problemas em lote na rede GPON, sugerir configurações de Wi-Fi e diagnosticar ONTs.",
+        ? `Olá! Estou com a ONT **${selectedCpe.serialNumber}** (${selectedCpe.manufacturer} ${selectedCpe.modelName}). Pergunte sobre o sinal, o Wi-Fi ou o cliente dela. Eu só leio: reiniciar e mudar Wi-Fi ficam nos botões da página.`
+        : "Olá! Sou o Copilot do CITacs. Posso achar um roteador pelo nome do cliente, login ou serial e diagnosticar sinal, WAN e Wi-Fi.",
       timestamp: new Date().toISOString(),
     },
   ]);

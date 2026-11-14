@@ -8,6 +8,32 @@ import {
   AiChatMessage,
 } from '@citacs/shared';
 import { diagnosticar } from '../genieacs/diagnostico';
+import { GenieacsService } from '../genieacs/genieacs.service';
+import { SgpService } from '../sgp/sgp.service';
+import { filtrar, motivoFalhaIa, paraIa } from './copilot-util';
+
+/** Ferramentas do chat. Só leitura: a IA não tem como reiniciar, resetar nem mudar Wi-Fi. */
+const FERRAMENTAS: OpenAI.ChatCompletionTool[] = [
+  {
+    type: 'function',
+    function: {
+      name: 'buscar_roteadores',
+      description:
+        'Lista os roteadores do ACS com o cliente do SGP (nome, login, plano, se está conectado). ' +
+        'Use "texto" para filtrar por nome do cliente, login PPPoE ou serial. Sem texto, lista todos.',
+      parameters: { type: 'object', properties: { texto: { type: 'string' } } },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'diagnosticar_roteador',
+      description:
+        'Diagnóstico por camadas (fibra, WAN, Wi-Fi) de um roteador, pelo id que buscar_roteadores devolve. Só lê; não muda nada.',
+      parameters: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+    },
+  },
+];
 
 @Injectable()
 export class AiService {
@@ -15,7 +41,11 @@ export class AiService {
   private openai: OpenAI | null = null;
   private readonly allowedOpenAiTenants: string[];
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly genieacs: GenieacsService,
+    private readonly sgp: SgpService,
+  ) {
     const apiKey = this.configService.get<string>('OPENAI_API_KEY');
     const allowed = this.configService.get<string>('OPENAI_ALLOWED_TENANTS') || 'citmax,netgo';
     this.allowedOpenAiTenants = allowed
@@ -165,76 +195,103 @@ Instruções específicas:
     };
   }
 
-  /**
-   * Chat interativo com o Copilot sobre um dispositivo ou suporte geral
-   */
-  async chatWithCopilot(
-    messages: AiChatMessage[],
-    cpeContext?: CpeDevice,
-    tenantId?: string
-  ): Promise<AiChatMessage> {
-    const canUseOpenAi = this.isTenantAllowedForOpenAi(tenantId, cpeContext);
+  /** Busca roteadores do ACS com o dono pelo SGP. */
+  private async buscarRoteadores(texto?: string) {
+    const cpes = await this.genieacs.getDevices();
+    // ponytail: uma consulta ao SGP por roteador (com cache de 10 min). Serve para dezenas;
+    // com a frota inteira no ACS, guardar o vínculo roteador→cliente e buscar nele.
+    const lista = await Promise.all(
+      cpes.map(async (c) =>
+        paraIa(c, this.sgp.configurado && c.ipAddress ? await this.sgp.clientePorIp(c.ipAddress).catch(() => null) : null),
+      ),
+    );
+    return filtrar(lista, texto);
+  }
 
-    const systemPrompt = `Você é o Copilot de IA de NOC do CITacs, especialista sênior em redes GPON, TR-069 e otimização avançada de Wi-Fi para os provedores CITmax e Netgo.
-Metodologia Técnica (baseada em evidence-based wifi-optimizer):
-1. Separação de Camadas: Sempre diferencie problemas de camada Wi-Fi (interferência de canais, canais DFS 5GHz, largura de banda 20/40/80MHz, atenuação de sinal) de problemas de fibra/GPON (Rx < -25 dBm) ou rota WAN/ISP.
-2. Segurança e Reversibilidade: Toda alteração proposta de canal ou configuração deve ser justificada por evidência e acompanhada de valor de rollback.
-3. Melhores Práticas de Rádio:
-   - 2.4GHz: Priorize estabilidade com 20MHz e canais sem sobreposição (1, 6 e 11). Evite canais 12/13.
-   - 5GHz: Identifique se canais entre 52 e 140 estão sob interferência de radar DFS e sugira migração para 36-48 ou 149-161.
-4. Responda em Português do Brasil com clareza, concisão e foco prático para técnicos de suporte e NOC.
-${cpeContext ? `Contexto atual da CPE em análise:\n${JSON.stringify(cpeContext, null, 2)}` : ''}`;
-
-    if (canUseOpenAi && this.openai) {
-      try {
-        const formattedMessages: OpenAI.ChatCompletionMessageParam[] = [
-          { role: 'system', content: systemPrompt },
-          ...messages.map((m) => ({
-            role: m.role as 'system' | 'user' | 'assistant',
-            content: m.content,
-          })),
-        ];
-
-        const completion = await this.openai.chat.completions.create({
-          model: 'gpt-4o-mini',
-          messages: formattedMessages,
-          temperature: 0.5,
-        });
-
-        const replyContent = completion.choices[0]?.message?.content || 'Desculpe, não consegui processar a resposta.';
-
-        return {
-          id: `msg-${Date.now()}`,
-          role: 'assistant',
-          content: replyContent,
-          timestamp: new Date().toISOString(),
-        };
-      } catch (err: any) {
-        this.logger.error(`Erro no chat OpenAI: ${err.message}`);
-      }
-    }
-
-    // Fallback de chat se não autorizado para OpenAI ou chave ausente
-    const lastUserMessage = messages[messages.length - 1]?.content.toLowerCase() || '';
-    let reply = !canUseOpenAi 
-      ? 'Aviso: O motor OpenAI avançado está autorizado exclusivamente para os provedores CITmax e Netgo. Operando em modo heurístico local. '
-      : 'Estou operando no modo de análise local. ';
-
-    if (lastUserMessage.includes('sinal') || lastUserMessage.includes('potencia') || lastUserMessage.includes('optico')) {
-      reply += `O sinal óptico da ONT está em ${cpeContext?.optical?.rxDbm ?? 'N/D'} dBm. Valores entre -8 e -24.5 dBm são considerados ideais em redes GPON classe B+/C+.`;
-    } else if (lastUserMessage.includes('wifi') || lastUserMessage.includes('wi-fi') || lastUserMessage.includes('canal')) {
-      reply += 'Para redes Wi-Fi 2.4GHz, os únicos canais que não sofrem sobreposição mútua são 1, 6 e 11. Em 5GHz, prefira canais baixos (36-48) para evitar interferências de radar DFS.';
-    } else if (lastUserMessage.includes('reiniciar') || lastUserMessage.includes('reboot')) {
-      reply += 'Você pode disparar um reboot seguro diretamente pelo botão de Ação Rápida ou aba Diagnóstico. A CPE receberá o comando na próxima sessão TR-069 ou via Connection Request.';
-    } else {
-      reply += `Recebi sua solicitação: "${messages[messages.length - 1]?.content}". Você pode me perguntar sobre sinais de fibra, diagnóstico de Wi-Fi, comandos TR-069 e procedimentos de atendimento ao cliente.`;
-    }
-
+  private async diagnosticarRoteador(id: string) {
+    const found = await this.genieacs.getDeviceComParams(String(id).slice(0, 200));
+    if (!found) return { erro: 'Roteador não encontrado no ACS.' };
+    const planoMbps = await this.sgp.planoMbpsDoIp(found.cpe.ipAddress);
+    const d = diagnosticar(found.params, { online: found.cpe.online, ultimoInform: found.cpe.lastInform, planoMbps });
     return {
+      id: found.cpe.id,
+      online: found.cpe.online,
+      ultimoInform: found.cpe.lastInform,
+      rxDbm: found.cpe.optical?.rxDbm ?? null,
+      planoMbps: planoMbps ?? null,
+      resumo: d.resumo,
+      achados: d.achados,
+      propostas: d.propostas.map((p) => ({ titulo: p.titulo, motivo: p.motivo, tradeoff: p.tradeoff })),
+    };
+  }
+
+  private executar(nome: string, args: any): Promise<unknown> {
+    if (nome === 'buscar_roteadores') return this.buscarRoteadores(typeof args?.texto === 'string' ? args.texto : undefined);
+    if (nome === 'diagnosticar_roteador') return this.diagnosticarRoteador(String(args?.id ?? ''));
+    return Promise.resolve({ erro: `Ferramenta desconhecida: ${nome}` });
+  }
+
+  /**
+   * Chat do Copilot. A IA consulta o ACS e o SGP pelas ferramentas acima, só para leitura.
+   */
+  async chatWithCopilot(messages: AiChatMessage[], cpeId?: string, tenantId?: string): Promise<AiChatMessage> {
+    const resposta = (content: string): AiChatMessage => ({
       id: `msg-${Date.now()}`,
       role: 'assistant',
-      content: reply,
+      content,
       timestamp: new Date().toISOString(),
-    };
+    });
+    if (!this.isTenantAllowedForOpenAi(tenantId) || !this.openai) {
+      return resposta('O chat está desligado: não há chave da OpenAI configurada no servidor. O botão "Diagnosticar com IA" na página do roteador funciona mesmo assim.');
+    }
+
+    const systemPrompt = `Você é o Copilot de NOC do CITacs, da NetGo: especialista em GPON, TR-069 e Wi-Fi. Responda em português do Brasil, curto e prático, para técnicos de suporte.
+Dados:
+- Use buscar_roteadores para achar um roteador pelo nome do cliente, login ou serial, ou para listar a rede. Use diagnosticar_roteador para ver sinal, WAN e Wi-Fi de um roteador.
+- Nunca invente cliente, medição ou estado: se não consultou, consulte; se a ferramenta não trouxe, diga que não sabe.
+- Se a busca trouxer mais de um cliente parecido, pergunte qual é. Se loginConfere for false, avise que o vínculo pelo IP pode estar desatualizado.
+- Você só lê. Não reinicia, não reseta e não muda Wi-Fi. Se pedirem isso, diga que não pode e indique o botão na página do roteador ("Reiniciar ONT" ou a área de Wi-Fi), sem pedir mais dados.
+Método:
+- Separe as camadas: Wi-Fi (canal, DFS em 52-140, largura, sinal), fibra (Rx abaixo de -25 dBm é ruim) e WAN/ISP.
+- Toda mudança sugerida precisa de evidência e do valor para desfazer. Nada de reboot como receita genérica nem canal universal.
+${cpeId ? `\nO técnico está com a página deste roteador aberta: id "${cpeId.replace(/[^\w.%:-]/g, '').slice(0, 200)}". "Esse roteador" ou "esse cliente" se refere a ele.` : ''}`;
+
+    // Só user/assistant vêm do navegador: um "system" ali seria o usuário reescrevendo as regras.
+    const conversa: OpenAI.ChatCompletionMessageParam[] = [
+      { role: 'system', content: systemPrompt },
+      ...messages
+        .filter((m) => m.role === 'user' || m.role === 'assistant')
+        .slice(-20)
+        .map((m) => ({ role: m.role as 'user' | 'assistant', content: String(m.content ?? '') })),
+    ];
+
+    try {
+      for (let rodada = 0; rodada < 5; rodada++) {
+        const completion = await this.openai.chat.completions.create({
+          model: 'gpt-4o-mini',
+          messages: conversa,
+          tools: FERRAMENTAS,
+          temperature: 0.3,
+        });
+        const msg = completion.choices[0]?.message;
+        if (!msg?.tool_calls?.length) return resposta(msg?.content || 'Não consegui montar uma resposta.');
+
+        conversa.push(msg);
+        for (const chamada of msg.tool_calls) {
+          let args: unknown = {};
+          try {
+            args = JSON.parse(chamada.function.arguments || '{}');
+          } catch {
+            /* argumento inválido vira objeto vazio */
+          }
+          const resultado = await this.executar(chamada.function.name, args).catch((e: Error) => ({ erro: e.message }));
+          conversa.push({ role: 'tool', tool_call_id: chamada.id, content: JSON.stringify(resultado) });
+        }
+      }
+      return resposta('A consulta ficou longa demais. Tente perguntar sobre um cliente ou roteador por vez.');
+    } catch (err: any) {
+      this.logger.error(`Erro no chat OpenAI: ${err.message}`);
+      return resposta(`Não consegui responder agora: ${motivoFalhaIa(err.message)}. O botão "Diagnosticar com IA" na página do roteador funciona mesmo assim.`);
+    }
   }
 }

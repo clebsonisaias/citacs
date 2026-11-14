@@ -22,7 +22,7 @@ export default function AiCopilotPage() {
     {
       id: "intro-1",
       role: "assistant",
-      content: `👋 Olá! Sou o **Copilot IA de NOC do CITacs**.\n\nEstou conectado ao **GenieACS** com o modelo **OpenAI** ativo para **CITmax** e **Netgo**, pronto para diagnóstico avançado de sinal óptico e otimização de Wi-Fi. Como posso ajudar sua equipe técnica hoje?`,
+      content: `👋 Olá! Sou o **Copilot de NOC do CITacs**.\n\nPosso achar um roteador pelo **nome do cliente**, login ou serial, e diagnosticar sinal, WAN e Wi-Fi com os dados do ACS e do SGP. Eu só leio: reiniciar e mudar Wi-Fi ficam nos botões da página do roteador.`,
       timestamp: new Date().toISOString(),
     },
   ]);
@@ -30,10 +30,10 @@ export default function AiCopilotPage() {
   const [loading, setLoading] = useState(false);
 
   const quickPrompts = [
-    "Quais ONTs estão com atenuação óptica pior que -27 dBm?",
-    "Detectar quedas de conexão massivas na última hora",
-    "Como otimizar a interferência de Wi-Fi 2.4GHz na rede?",
-    "Identificar canais 5GHz em faixa de radar DFS com instabilidade",
+    "Como está a conexão do Teobaldo Guedes?",
+    "Quais roteadores estão offline?",
+    "Liste os roteadores e de quem são",
+    "Algum roteador com sinal de fibra ruim?",
   ];
 
   const handleSend = async (text: string) => {
