@@ -37,13 +37,10 @@ export class AiController {
       tenantId?: string;
     }
   ) {
-    let cpeContext = undefined;
-    if (body.cpeId) {
-      cpeContext = await this.genieacsService.getDeviceById(body.cpeId);
-    }
+    // Só o id: os dados do roteador a IA busca pelas ferramentas, sem IP, MAC nem login.
     return this.aiService.chatWithCopilot(
-      body.messages || [],
-      cpeContext || undefined,
+      Array.isArray(body.messages) ? body.messages : [],
+      typeof body.cpeId === 'string' ? body.cpeId : undefined,
       body.tenantId
     );
   }
