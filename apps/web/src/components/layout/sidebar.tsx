@@ -15,6 +15,7 @@ import {
   BookOpen,
   LogOut,
   Users,
+  Plug,
   X
 } from "lucide-react";
 import { useNav } from "./nav-context";
@@ -61,7 +62,12 @@ export function Sidebar() {
     { label: "Auditoria & Logs", href: "/logs", icon: FileText },
     { label: "Como Configurar Roteadores", href: "/router-config", icon: BookOpen },
     { label: "Configurações", href: "/settings", icon: Settings },
-    ...(usuario?.perfil === "admin" ? [{ label: "Usuários", href: "/usuarios", icon: Users }] : []),
+    ...(usuario?.perfil === "admin"
+      ? [
+          { label: "Usuários", href: "/usuarios", icon: Users },
+          { label: "Integrações", href: "/integracoes", icon: Plug },
+        ]
+      : []),
   ];
 
   const renderNavContent = (isMobile = false) => (
