@@ -1,24 +1,56 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { 
-  Radio, 
-  Cpu, 
-  Sparkles, 
-  Activity, 
-  Settings, 
-  ShieldCheck, 
+import {
+  Radio,
+  Cpu,
+  Sparkles,
+  Activity,
+  Settings,
+  ShieldCheck,
   FileText,
   Layers,
   BookOpen,
+  LogOut,
+  Users,
   X
 } from "lucide-react";
 import { useNav } from "./nav-context";
 
+interface UsuarioLogado {
+  nome: string;
+  login: string;
+  perfil: "leitura" | "escrita" | "admin";
+}
+
+async function sair() {
+  await fetch("/api/auth/logout", { method: "POST" }).catch(() => undefined);
+  window.location.replace("/login");
+}
+
 export function Sidebar() {
   const pathname = usePathname();
   const { mobileMenuOpen, setMobileMenuOpen } = useNav();
+  const [usuario, setUsuario] = useState<UsuarioLogado | null>(null);
+  const naLogin = pathname === "/login";
+
+  // Sessão vencida ou senha temporária ainda não trocada: volta para o login.
+  useEffect(() => {
+    if (naLogin) return;
+    fetch("/api/auth/me")
+      .then(async (r) => {
+        if (r.status === 401) return window.location.replace("/login");
+        if (!r.ok) return;
+        const u = await r.json();
+        if (u.trocarSenha) return window.location.replace("/login");
+        setUsuario(u);
+      })
+      .catch(() => undefined);
+  }, [naLogin]);
+
+  if (naLogin) return null;
 
   const navItems = [
     { label: "Visão Geral", href: "/", icon: Activity },
@@ -29,6 +61,7 @@ export function Sidebar() {
     { label: "Auditoria & Logs", href: "/logs", icon: FileText },
     { label: "Como Configurar Roteadores", href: "/router-config", icon: BookOpen },
     { label: "Configurações", href: "/settings", icon: Settings },
+    ...(usuario?.perfil === "admin" ? [{ label: "Usuários", href: "/usuarios", icon: Users }] : []),
   ];
 
   const renderNavContent = (isMobile = false) => (
@@ -95,9 +128,19 @@ export function Sidebar() {
         <div className="flex items-center gap-3 px-2 py-2 rounded-lg bg-secondary/40 border border-border/50 text-xs text-muted-foreground">
           <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
           <div className="flex-1 min-w-0">
-            <div className="font-medium text-foreground truncate">CITmax &amp; Netgo</div>
-            <div className="text-[11px] truncate text-muted-foreground">GenieACS TR-069 Online</div>
+            <div className="font-medium text-foreground truncate">{usuario?.nome ?? "…"}</div>
+            <div className="text-[11px] truncate text-muted-foreground">
+              {usuario ? `${usuario.login} · ${usuario.perfil}` : "verificando sessão"}
+            </div>
           </div>
+          <button
+            onClick={sair}
+            className="p-1.5 rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
+            aria-label="Sair"
+            title="Sair"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
         </div>
       </div>
     </div>
