@@ -147,3 +147,36 @@ export interface RespostaRadarPreditivo {
   resumo: ResumoRadarPreditivo;
   alertas: AlertaRadarPreditivo[];
 }
+
+export interface ZtpProvisionInfo {
+  autorizado: boolean;
+  motivo?: string;
+  serial?: string;
+  mac?: string;
+  clienteNome?: string;
+  contratoId?: number | string;
+  pppoeLogin?: string;
+  pppoeSenha?: string;
+  vlan?: number;
+  wifiSsid?: string;
+  wifiSenha?: string;
+  plano?: string;
+  oltNome?: string;
+  cto?: string;
+}
+
+export interface ZtpRegistroLog {
+  id: number | string;
+  serial: string;
+  mac?: string;
+  fabricante?: string;
+  modelo?: string;
+  clienteNome?: string;
+  contratoId?: string;
+  pppoeLogin?: string;
+  vlan?: number;
+  wifiSsid?: string;
+  status: 'SUCESSO' | 'PENDENTE_SGP' | 'ERRO';
+  detalhes?: string;
+  criadoEm: string;
+}

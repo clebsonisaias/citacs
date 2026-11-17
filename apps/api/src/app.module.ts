@@ -7,6 +7,7 @@ import { AuthModule } from './modules/auth/auth.module';
 import { SgpModule } from './modules/sgp/sgp.module';
 import { IntegracaoModule } from './modules/integracao/integracao.module';
 import { SaudeModule } from './modules/saude/saude.module';
+import { ZtpModule } from './modules/ztp/ztp.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { SaudeModule } from './modules/saude/saude.module';
     SgpModule,
     IntegracaoModule,
     SaudeModule,
+    ZtpModule,
   ],
 })
 export class AppModule {}
