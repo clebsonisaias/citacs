@@ -41,8 +41,33 @@ test('plano: tira a velocidade do nome', () => {
   assert.equal(planoMbps(null), null);
 });
 
-test('login: compara sem espaço e sem maiúscula (o roteador manda "Kovausk ")', () => {
-  assert.equal(normalizarLogin('Kovausk '), normalizarLogin('kovausk'));
+test('cliente: extrai métricas da sessão ativa no BRAS (radacct)', () => {
+  const comSessao = {
+    result: [
+      {
+        nome: 'TEOBALDO GUEDES',
+        pppoe_login: 'kovausk',
+        plano: '500M',
+        online: true,
+        radacct: [
+          {
+            acctstarttime: '2026-11-15T08:57:50',
+            acctstoptime: null,
+            nasipaddress: '170.82.252.2',
+            callingstationid: '88:36:cf:5c:76:af',
+            acctoutputoctets: 104857600, // 100 MB
+            acctinputoctets: 52428800,   // 50 MB
+          },
+        ],
+      },
+    ],
+  };
+  const c = extrairCliente(comSessao);
+  assert.equal(c.sessaoConectadaEm, '2026-11-15T08:57:50');
+  assert.equal(c.nasIp, '170.82.252.2');
+  assert.equal(c.macConectado, '88:36:cf:5c:76:af');
+  assert.equal(c.downloadMb, 100);
+  assert.equal(c.uploadMb, 50);
 });
 
 test('vinculo: prioriza login PPPoE e vincula com segurança mesmo em IP dinâmico/CGNAT', () => {

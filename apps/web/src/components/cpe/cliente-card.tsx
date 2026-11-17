@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, Gauge, Loader2, MapPin, UserRound } from "lucide-react";
+import { Activity, AlertTriangle, ArrowDown, ArrowUp, Gauge, Loader2, MapPin, Unplug, UserRound } from "lucide-react";
 
 interface ClienteSgp {
   nome: string;
@@ -12,6 +12,11 @@ interface ClienteSgp {
   endereco: string | null;
   bairro: string | null;
   cidade: string | null;
+  sessaoConectadaEm?: string | null;
+  nasIp?: string | null;
+  macConectado?: string | null;
+  downloadMb?: number | null;
+  uploadMb?: number | null;
 }
 
 interface Resposta {
@@ -29,8 +34,11 @@ interface Resposta {
 export function ClienteCard({ cpeId, loginRoteador }: { cpeId: string; loginRoteador?: string }) {
   const [r, setR] = useState<Resposta | null>(null);
   const [erro, setErro] = useState("");
+  const [desconectando, setDesconectando] = useState(false);
+  const [mensagemSucesso, setMensagemSucesso] = useState("");
+  const [erroAcao, setErroAcao] = useState("");
 
-  useEffect(() => {
+  const carregarCliente = () => {
     fetch(`/api/cpes/${encodeURIComponent(cpeId)}/cliente`)
       .then(async (res) => {
         const corpo = await res.json().catch(() => null);
@@ -38,7 +46,37 @@ export function ClienteCard({ cpeId, loginRoteador }: { cpeId: string; loginRote
         setR(corpo);
       })
       .catch((e: Error) => setErro(e.message));
+  };
+
+  useEffect(() => {
+    carregarCliente();
   }, [cpeId]);
+
+  const handleDesconectar = async () => {
+    const login = c?.pppoeLogin || loginRoteador;
+    if (!confirm(`Deseja realmente derrubar a sessão PPPoE de "${login}" no BRAS para forçar a reconexão imediata do roteador?`)) {
+      return;
+    }
+    setDesconectando(true);
+    setMensagemSucesso("");
+    setErroAcao("");
+    try {
+      const res = await fetch(`/api/cpes/${encodeURIComponent(cpeId)}/desconectar-pppoe`, {
+        method: "POST",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message || `Erro ${res.status}`);
+      setMensagemSucesso(data?.mensagem || "Sessão desconectada com sucesso no BRAS!");
+      setTimeout(() => {
+        setMensagemSucesso("");
+        carregarCliente();
+      }, 5000);
+    } catch (e) {
+      setErroAcao((e as Error).message);
+    } finally {
+      setDesconectando(false);
+    }
+  };
 
   if (r && !r.configurado) return null; // integração com o SGP desligada
   const c = r?.cliente;
@@ -56,7 +94,7 @@ export function ClienteCard({ cpeId, loginRoteador }: { cpeId: string; loginRote
               c.online ? "text-emerald-400 border-emerald-500/30 bg-emerald-500/10" : "text-muted-foreground border-border"
             }`}
           >
-            {c.online ? "conectado" : "desconectado"}
+            {c.online ? "Sessão Online" : "Sessão Offline"}
           </span>
         )}
       </div>
@@ -102,6 +140,66 @@ export function ClienteCard({ cpeId, loginRoteador }: { cpeId: string; loginRote
               <span>{c.endereco ?? [c.bairro, c.cidade].filter(Boolean).join(", ")}</span>
             </p>
           )}
+
+          {/* Dados da sessão Radius no BRAS */}
+          {(c.sessaoConectadaEm || c.downloadMb !== null) && (
+            <div className="p-2.5 rounded-xl bg-secondary/30 border border-border/40 text-xs space-y-1.5 font-mono">
+              <div className="flex items-center justify-between text-muted-foreground text-[11px]">
+                <span className="flex items-center gap-1">
+                  <Activity className="w-3 h-3 text-primary" /> Sessão no BRAS
+                </span>
+                {c.nasIp && <span>NAS: {c.nasIp}</span>}
+              </div>
+              {c.sessaoConectadaEm && (
+                <p className="text-[11px] text-zinc-400">
+                  Online desde: {new Date(c.sessaoConectadaEm).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}
+                </p>
+              )}
+              {(c.downloadMb !== null || c.uploadMb !== null) && (
+                <div className="flex items-center gap-3 text-[11px] text-zinc-300 pt-1 border-t border-border/30">
+                  <span className="flex items-center gap-1 text-emerald-400">
+                    <ArrowDown className="w-3 h-3" /> {(c.downloadMb ?? 0).toLocaleString("pt-BR")} MB
+                  </span>
+                  <span className="flex items-center gap-1 text-sky-400">
+                    <ArrowUp className="w-3 h-3" /> {(c.uploadMb ?? 0).toLocaleString("pt-BR")} MB
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Botão de ação: Desconectar PPPoE no BRAS */}
+          <div className="pt-1">
+            <button
+              type="button"
+              onClick={handleDesconectar}
+              disabled={desconectando}
+              className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-semibold border border-rose-500/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 active:scale-[0.98] transition-all disabled:opacity-50"
+            >
+              {desconectando ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Derrubando Sessão no BRAS...</span>
+                </>
+              ) : (
+                <>
+                  <Unplug className="w-3.5 h-3.5 text-rose-400" />
+                  <span>Derrubar Sessão PPPoE (Reiniciar Conexão)</span>
+                </>
+              )}
+            </button>
+            {mensagemSucesso && (
+              <p className="mt-1.5 text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-2 text-center animate-in fade-in">
+                ✓ {mensagemSucesso}
+              </p>
+            )}
+            {erroAcao && (
+              <p className="mt-1.5 text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-lg p-2 text-center animate-in fade-in">
+                ✕ {erroAcao}
+              </p>
+            )}
+          </div>
+
           {r.loginConfere === false && (
             <p className="text-xs text-amber-300 flex items-start gap-2 rounded-lg border border-amber-400/30 bg-amber-400/10 p-2">
               <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />

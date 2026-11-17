@@ -9,6 +9,11 @@ export interface ClienteSgp {
   endereco: string | null;
   bairro: string | null;
   cidade: string | null;
+  sessaoConectadaEm?: string | null;
+  nasIp?: string | null;
+  macConectado?: string | null;
+  downloadMb?: number | null;
+  uploadMb?: number | null;
 }
 
 export const normalizarLogin = (s: string | null | undefined) => (s ?? '').trim().toLowerCase();
@@ -113,6 +118,25 @@ export function extrairCliente(resposta: unknown): ClienteSgp | null {
   const s = lista.find((x) => x['online'] === true) ?? lista[0];
   if (!s) return null;
   const plano = texto(s['plano']);
+
+  let sessaoConectadaEm: string | null = null;
+  let nasIp: string | null = null;
+  let macConectado: string | null = null;
+  let downloadMb: number | null = null;
+  let uploadMb: number | null = null;
+
+  const radacctList = Array.isArray(s['radacct']) ? (s['radacct'] as Array<Record<string, unknown>>) : [];
+  const sessaoAtiva = radacctList.find((sess) => sess && typeof sess === 'object' && sess['acctstoptime'] == null) || radacctList[0];
+  if (sessaoAtiva && typeof sessaoAtiva === 'object') {
+    sessaoConectadaEm = texto(sessaoAtiva['acctstarttime']);
+    nasIp = texto(sessaoAtiva['nasipaddress']);
+    macConectado = texto(sessaoAtiva['callingstationid']);
+    const outOctets = Number(sessaoAtiva['acctoutputoctets'] || 0);
+    const inOctets = Number(sessaoAtiva['acctinputoctets'] || 0);
+    if (outOctets > 0) downloadMb = Math.round(outOctets / (1024 * 1024));
+    if (inOctets > 0) uploadMb = Math.round(inOctets / (1024 * 1024));
+  }
+
   return {
     nome: texto(s['nome']) ?? '(sem nome)',
     pppoeLogin: texto(s['pppoe_login']) ?? '',
@@ -123,5 +147,10 @@ export function extrairCliente(resposta: unknown): ClienteSgp | null {
     endereco: texto(s['endereco']),
     bairro: texto(s['endereco_bairro']),
     cidade: texto(s['endereco_cidade']),
+    sessaoConectadaEm,
+    nasIp,
+    macConectado,
+    downloadMb,
+    uploadMb,
   };
 }

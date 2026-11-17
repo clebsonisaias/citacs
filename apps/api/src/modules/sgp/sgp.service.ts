@@ -1,4 +1,14 @@
-import { Controller, Get, Injectable, Logger, NotFoundException, Param, ServiceUnavailableException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Controller,
+  Get,
+  Injectable,
+  Logger,
+  NotFoundException,
+  Param,
+  Post,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { GenieacsService } from '../genieacs/genieacs.service';
 import { ClienteSgp, extrairCliente, normalizarLogin, resolverVinculoCliente, ResultadoClienteRoteador } from './sgp-util';
 
@@ -103,6 +113,38 @@ export class SgpService {
     if (!this.configurado || !ip) return undefined;
     return (await this.clientePorIp(ip).catch(() => null))?.planoMbps ?? undefined;
   }
+
+  /** Desconecta a sessão PPPoE no BRAS através do SGP para forçar reconexão. */
+  async desconectarPppoe(login: string): Promise<{ ok: boolean; mensagem: string }> {
+    if (!this.configurado) throw new ServiceUnavailableException('Integração SGP não configurada');
+    const limpo = normalizarLogin(login);
+    if (!limpo) throw new BadRequestException('Login PPPoE inválido');
+
+    const form = new FormData();
+    form.set('app', this.app);
+    form.set('token', this.token);
+    form.set('login', limpo);
+
+    try {
+      const r = await fetch(`${this.url}/ws/radius/disconnect/`, {
+        method: 'POST',
+        body: form,
+        signal: AbortSignal.timeout(10_000),
+      });
+      const corpo: any = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        throw new Error(corpo?.msg || corpo?.mensagem || `SGP respondeu ${r.status}`);
+      }
+      this.cache.delete(`username:${limpo}`);
+      return {
+        ok: true,
+        mensagem: corpo?.result || corpo?.msg || corpo?.mensagem || 'Sessão PPPoE desconectada com sucesso',
+      };
+    } catch (e) {
+      this.logger.error(`Falha ao desconectar PPPoE ${limpo}: ${(e as Error).message}`);
+      throw new ServiceUnavailableException(`Falha ao desconectar PPPoE: ${(e as Error).message}`);
+    }
+  }
 }
 
 @Controller('cpes')
@@ -130,5 +172,17 @@ export class ClienteController {
       loginConfere: res.loginConfere,
       motivo: res.motivo,
     };
+  }
+
+  /** Desconecta a sessão PPPoE deste roteador no BRAS através do SGP. */
+  @Post(':id/desconectar-pppoe')
+  async desconectarPppoe(@Param('id') id: string) {
+    if (!this.sgp.configurado) throw new ServiceUnavailableException('Integração SGP não configurada');
+    const achado = await this.genieacs.getDeviceComParams(id);
+    if (!achado) throw new NotFoundException('Dispositivo não encontrado no ACS');
+    const { cpe } = achado;
+    const login = cpe.pppoeUsername;
+    if (!login) throw new BadRequestException('Dispositivo não possui usuário PPPoE configurado');
+    return this.sgp.desconectarPppoe(login);
   }
 }
