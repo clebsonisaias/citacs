@@ -24,7 +24,7 @@ export class AiController {
       };
     }
     // Com o plano do SGP, o diagnóstico compara a velocidade negociada com a contratada.
-    const planoMbps = await this.sgp.planoMbpsDoIp(found.cpe.ipAddress);
+    const planoMbps = await this.sgp.planoMbpsDoCpe(found.cpe);
     return this.aiService.diagnoseCpe(found.cpe, found.params, tenantId, planoMbps);
   }
 

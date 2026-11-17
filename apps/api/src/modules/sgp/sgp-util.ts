@@ -13,6 +13,77 @@ export interface ClienteSgp {
 
 export const normalizarLogin = (s: string | null | undefined) => (s ?? '').trim().toLowerCase();
 
+export interface ResultadoClienteRoteador {
+  cliente: ClienteSgp | null;
+  metodo: 'login' | 'ip' | null;
+  loginConfere: boolean | null;
+  motivo?: string;
+}
+
+/**
+ * Decide a vinculação do roteador ao cliente do SGP.
+ * Regra:
+ * 1. Se achou por login PPPoE -> vincula com segurança (imune a IP dinâmico/CGNAT).
+ * 2. Se achou por IP:
+ *    - Se o roteador tem login PPPoE e ele NÃO bate com o login da sessão do SGP,
+ *      NÃO vincula (evita atribuir o cliente anterior dono do IP ao novo roteador).
+ *    - Se bate ou se o roteador não informou PPPoE -> vincula por IP.
+ * 3. Se não achou em nenhum -> cliente nulo com motivo claro.
+ */
+export function resolverVinculoCliente(
+  cpe: { pppoeUsername?: string; ipAddress?: string },
+  clientePorLogin: ClienteSgp | null,
+  clientePorIp: ClienteSgp | null,
+): ResultadoClienteRoteador {
+  const loginRoteador = normalizarLogin(cpe.pppoeUsername);
+  const ip = (cpe.ipAddress ?? '').trim();
+
+  // 1. Prioridade máxima: login PPPoE do próprio roteador
+  if (clientePorLogin) {
+    return {
+      cliente: clientePorLogin,
+      metodo: 'login',
+      loginConfere: true,
+    };
+  }
+
+  // 2. Fallback: sessão Radius pelo IP
+  if (clientePorIp) {
+    const loginSgp = normalizarLogin(clientePorIp.pppoeLogin);
+    if (loginRoteador && loginSgp && loginRoteador !== loginSgp) {
+      return {
+        cliente: null,
+        metodo: 'ip',
+        loginConfere: false,
+        motivo: `O IP de internet (${ip}) possui sessão de outro assinante no SGP (${clientePorIp.nome} / ${clientePorIp.pppoeLogin}), e o login do roteador (${cpe.pppoeUsername}) não foi localizado no SGP.`,
+      };
+    }
+    return {
+      cliente: clientePorIp,
+      metodo: 'ip',
+      loginConfere: loginRoteador ? true : null,
+    };
+  }
+
+  if (!loginRoteador && !ip) {
+    return {
+      cliente: null,
+      metodo: null,
+      loginConfere: null,
+      motivo: 'O roteador ainda não informou login PPPoE nem IP de internet',
+    };
+  }
+
+  return {
+    cliente: null,
+    metodo: null,
+    loginConfere: null,
+    motivo: loginRoteador
+      ? `Nenhum assinante encontrado no SGP com o login PPPoE "${cpe.pppoeUsername}"`
+      : `Nenhuma sessão no SGP com o IP ${ip}`,
+  };
+}
+
 /** "Fibra - ⚡ Ultra 500.exp.260818" → 500; "1 Giga" → 1000. Null se não achar velocidade. */
 export function planoMbps(plano: string | null | undefined): number | null {
   if (!plano) return null;

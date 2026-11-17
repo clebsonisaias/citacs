@@ -17,13 +17,15 @@ interface ClienteSgp {
 interface Resposta {
   configurado: boolean;
   cliente?: ClienteSgp | null;
+  metodo?: "login" | "ip" | null;
+  loginConsultado?: string;
+  ipConsultado?: string;
   loginConfere?: boolean | null;
   motivo?: string;
-  ipConsultado?: string;
   lidoEm?: string;
 }
 
-/** Dono do roteador segundo o SGP, ligado pelo IP de internet da última leitura do ACS. */
+/** Dono do roteador segundo o SGP, vinculado por login PPPoE ou IP de internet. */
 export function ClienteCard({ cpeId, loginRoteador }: { cpeId: string; loginRoteador?: string }) {
   const [r, setR] = useState<Resposta | null>(null);
   const [erro, setErro] = useState("");
@@ -65,7 +67,19 @@ export function ClienteCard({ cpeId, loginRoteador }: { cpeId: string; loginRote
         </p>
       )}
       {erro && <p className="text-xs text-red-300">{erro}</p>}
-      {r && !c && <p className="text-xs text-muted-foreground">{r.motivo ?? "Cliente não encontrado no SGP."}</p>}
+      {r && !c && (
+        <div className="space-y-2">
+          <p className="text-xs text-muted-foreground">{r.motivo ?? "Cliente não encontrado no SGP."}</p>
+          {r.loginConfere === false && (
+            <p className="text-xs text-amber-300 flex items-start gap-2 rounded-lg border border-amber-400/30 bg-amber-400/10 p-2">
+              <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+              <span>
+                Aviso: O IP de internet deste roteador pertence a outra sessão no SGP. A vinculação incorreta foi prevenida.
+              </span>
+            </p>
+          )}
+        </div>
+      )}
 
       {c && (
         <>
@@ -100,10 +114,14 @@ export function ClienteCard({ cpeId, loginRoteador }: { cpeId: string; loginRote
         </>
       )}
 
-      {r?.ipConsultado && (
+      {r && (r.loginConsultado || r.ipConsultado) && (
         <p className="text-[11px] text-muted-foreground pt-2 border-t border-border/40">
-          Ligado pelo IP {r.ipConsultado}
-          {r.lidoEm && ` da leitura de ${new Date(r.lidoEm).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}`}
+          {r.metodo === "login"
+            ? `Vinculado pelo login PPPoE ${r.loginConsultado}`
+            : r.ipConsultado
+            ? `Vinculado pelo IP ${r.ipConsultado}`
+            : ""}
+          {r.lidoEm && ` · Leitura de ${new Date(r.lidoEm).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}`}
         </p>
       )}
     </div>

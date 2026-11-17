@@ -201,9 +201,10 @@ Instruções específicas:
     // ponytail: uma consulta ao SGP por roteador (com cache de 10 min). Serve para dezenas;
     // com a frota inteira no ACS, guardar o vínculo roteador→cliente e buscar nele.
     const lista = await Promise.all(
-      cpes.map(async (c) =>
-        paraIa(c, this.sgp.configurado && c.ipAddress ? await this.sgp.clientePorIp(c.ipAddress).catch(() => null) : null),
-      ),
+      cpes.map(async (c) => {
+        const info = this.sgp.configurado ? await this.sgp.clienteDoRoteador(c).catch(() => null) : null;
+        return paraIa(c, info?.cliente ?? null);
+      }),
     );
     return filtrar(lista, texto);
   }
@@ -211,7 +212,7 @@ Instruções específicas:
   private async diagnosticarRoteador(id: string) {
     const found = await this.genieacs.getDeviceComParams(String(id).slice(0, 200));
     if (!found) return { erro: 'Roteador não encontrado no ACS.' };
-    const planoMbps = await this.sgp.planoMbpsDoIp(found.cpe.ipAddress);
+    const planoMbps = await this.sgp.planoMbpsDoCpe(found.cpe);
     const d = diagnosticar(found.params, { online: found.cpe.online, ultimoInform: found.cpe.lastInform, planoMbps });
     return {
       id: found.cpe.id,
