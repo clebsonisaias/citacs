@@ -210,7 +210,7 @@ export default function DashboardPage() {
                   <div>
                     <div className="flex items-center gap-2">
                       <h4 className="font-bold text-sm text-white group-hover:text-primary transition-colors">
-                        {cpe.serialNumber}
+                        {cpe.subscriberName || cpe.serialNumber}
                       </h4>
                       <span
                         className={`w-2 h-2 rounded-full ${
@@ -218,8 +218,8 @@ export default function DashboardPage() {
                         }`}
                       />
                     </div>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {cpe.manufacturer} • {cpe.modelName}
+                    <p className="text-xs text-muted-foreground mt-0.5 font-mono">
+                      {cpe.subscriberName ? `${cpe.serialNumber} • ` : ""}{cpe.manufacturer} • {cpe.modelName}
                     </p>
                   </div>
 

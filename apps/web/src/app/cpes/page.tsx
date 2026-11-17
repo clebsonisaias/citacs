@@ -180,8 +180,10 @@ export default function CpesListPage() {
                 {filteredCpes.map((cpe) => (
                   <tr key={cpe.id} className="hover:bg-secondary/20 transition-colors">
                     <td className="p-3.5">
-                      <div className="font-semibold text-white font-mono">{cpe.serialNumber}</div>
-                      <div className="text-[11px] text-muted-foreground font-mono">{cpe.macAddress || "Sem MAC"}</div>
+                      <div className="font-semibold text-white">{cpe.subscriberName || cpe.serialNumber}</div>
+                      <div className="text-[11px] text-muted-foreground font-mono">
+                        {cpe.subscriberName ? `${cpe.serialNumber} • ` : ""}{cpe.macAddress || "Sem MAC"}
+                      </div>
                     </td>
                     <td className="p-3.5">
                       <div className="text-foreground">{cpe.manufacturer} {cpe.modelName}</div>
