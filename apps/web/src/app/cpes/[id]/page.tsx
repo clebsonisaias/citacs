@@ -5,6 +5,7 @@ import { Header } from "@/components/layout/header";
 import { AiCopilotDrawer } from "@/components/ai/ai-copilot-drawer";
 import { OpticalGauge } from "@/components/cpe/optical-gauge";
 import { WifiManager } from "@/components/cpe/wifi-manager";
+import { LanDevices } from "@/components/cpe/lan-devices";
 import { ClienteCard } from "@/components/cpe/cliente-card";
 import { CpeDevice, AiDiagnosticResult } from "@citacs/shared";
 import Link from "next/link";
@@ -290,6 +291,9 @@ export default function CpeDetailsPage({ params }: { params: Promise<{ id: strin
                 onUpdated={loadCpe}
               />
             </div>
+
+            {/* Dispositivos Conectados na LAN (Wi-Fi e Cabo) */}
+            <LanDevices hosts={currentCpe.hosts} />
           </div>
         </div>
       </main>

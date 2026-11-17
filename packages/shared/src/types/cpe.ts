@@ -27,6 +27,16 @@ export interface WanInterface {
   status: 'Connected' | 'Disconnected' | 'Connecting';
 }
 
+export interface LanDevice {
+  ipAddress: string;
+  macAddress: string;
+  hostName?: string;
+  interfaceType: 'Ethernet' | 'Wi-Fi 2.4GHz' | 'Wi-Fi 5GHz' | 'Wi-Fi' | 'Outro';
+  active: boolean;
+  leaseTimeRemaining?: number;
+  vendorClass?: string;
+}
+
 export interface CpeDevice {
   id: string; // GenieACS _id (ex: 00259E-HG8145V5-...)
   serialNumber: string;
@@ -44,6 +54,7 @@ export interface CpeDevice {
   optical?: OpticalPower;
   wifi?: WifiRadio[];
   wan?: WanInterface[];
+  hosts?: LanDevice[];
   tenantId?: string;
 }
 

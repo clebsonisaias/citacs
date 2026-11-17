@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
-import { CpeDevice, OpticalPower } from '@citacs/shared';
+import { CpeDevice, OpticalPower, LanDevice } from '@citacs/shared';
 import { achatarGenie, caminhosWifi, detectarDataModel, estaOnline, indicesWifi, normalizarParams, paramsDeGenie } from './cpe-normalizer';
 
 @Injectable()
@@ -251,7 +251,58 @@ export class GenieacsService {
             uptimeSeconds: n.wanUptimeSeg ?? undefined,
           }]
         : [],
+      hosts: this.extractLanHosts(raw),
     };
+  }
+
+  private extractLanHosts(raw: any): LanDevice[] {
+    const hostsNode =
+      raw?.InternetGatewayDevice?.LANDevice?.[1]?.Hosts?.Host ||
+      raw?.InternetGatewayDevice?.LANDevice?.['1']?.Hosts?.Host ||
+      raw?.Device?.Hosts?.Host ||
+      {};
+
+    const list: LanDevice[] = [];
+    for (const [_, h] of Object.entries<any>(hostsNode)) {
+      if (!h || typeof h !== 'object') continue;
+      const ip = this.extractValue(h.IPAddress);
+      const mac = this.extractValue(h.MACAddress) || this.extractValue(h.PhysAddress);
+      if (!ip && !mac) continue;
+
+      const hostName = this.extractValue(h.HostName) || undefined;
+      const activeVal = this.extractValue(h.Active);
+      const active = activeVal === 'true' || activeVal === '1';
+      const iface = this.extractValue(h.InterfaceType);
+      const l2 = this.extractValue(h.Layer2Interface) || '';
+      const lease = Number(this.extractValue(h.LeaseTimeRemaining)) || undefined;
+      const vendorClass = this.extractValue(h.VendorClassID) || undefined;
+
+      let interfaceType: LanDevice['interfaceType'] = 'Outro';
+      if (l2.includes('WLANConfiguration.2') || l2.includes('WiFi.SSID.2') || l2.includes('WiFi.Radio.2')) {
+        interfaceType = 'Wi-Fi 5GHz';
+      } else if (l2.includes('WLANConfiguration.1') || l2.includes('WiFi.SSID.1') || l2.includes('WiFi.Radio.1')) {
+        interfaceType = 'Wi-Fi 2.4GHz';
+      } else if (iface === '802.11' || l2.includes('WLAN') || l2.includes('WiFi')) {
+        interfaceType = 'Wi-Fi';
+      } else if (iface === 'Ethernet' || l2.includes('Ethernet')) {
+        interfaceType = 'Ethernet';
+      }
+
+      list.push({
+        ipAddress: ip || 'N/D',
+        macAddress: mac || 'N/D',
+        hostName,
+        interfaceType,
+        active,
+        leaseTimeRemaining: lease,
+        vendorClass,
+      });
+    }
+
+    return list.sort((a, b) => {
+      if (a.active !== b.active) return a.active ? -1 : 1;
+      return (a.hostName || a.ipAddress).localeCompare(b.hostName || b.ipAddress);
+    });
   }
 
   private extractValue(node: any): string | undefined {
