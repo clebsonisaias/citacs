@@ -46,52 +46,7 @@ export default function DashboardPage() {
     fetchCpes();
   }, [search]);
 
-  // Fallback demo CPE se a lista estiver vazia (para o usuário ver a interface de imediato)
-  const displayCpes: CpeDevice[] = cpes.length > 0 ? cpes : [
-    {
-      id: "demo-ont-1",
-      serialNumber: "HWTC12345678",
-      manufacturer: "Huawei",
-      modelName: "EchoLife HG8145V5",
-      softwareVersion: "V5R019C00S105",
-      macAddress: "48:57:02:11:22:33",
-      ipAddress: "100.64.12.45",
-      pppoeUsername: "cliente.joao@citmax",
-      online: true,
-      lastInform: new Date().toISOString(),
-      registeredAt: new Date(Date.now() - 86400000 * 5).toISOString(),
-      optical: {
-        rxDbm: -21.4,
-        txDbm: 2.3,
-        status: "optimal",
-      },
-      wifi: [
-        { index: 1, band: "2.4GHz", ssid: "CITmax_Joao_2G", enabled: true, channel: 6 },
-        { index: 2, band: "5GHz", ssid: "CITmax_Joao_5G", enabled: true, channel: 36 },
-      ],
-    },
-    {
-      id: "demo-ont-2",
-      serialNumber: "ZTEG98765432",
-      manufacturer: "ZTE",
-      modelName: "F670L",
-      softwareVersion: "V9.0.10P1N1",
-      macAddress: "70:A8:E3:44:55:66",
-      ipAddress: "100.64.12.89",
-      pppoeUsername: "cliente.maria@citmax",
-      online: true,
-      lastInform: new Date().toISOString(),
-      registeredAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-      optical: {
-        rxDbm: -27.8,
-        txDbm: 1.8,
-        status: "critical",
-      },
-      wifi: [
-        { index: 1, band: "2.4GHz", ssid: "Maria_WiFi", enabled: true, channel: 11 },
-      ],
-    },
-  ];
+  const displayCpes: CpeDevice[] = cpes;
 
   const total = displayCpes.length;
   const onlineCount = displayCpes.filter((c) => c.online).length;
@@ -199,8 +154,20 @@ export default function DashboardPage() {
           </div>
 
           {/* Cards de Dispositivos */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {displayCpes.map((cpe) => (
+          {loading && displayCpes.length === 0 ? (
+            <div className="p-12 text-center text-muted-foreground flex flex-col items-center justify-center gap-3 bg-card border border-border rounded-2xl">
+              <RefreshCw className="w-6 h-6 animate-spin text-primary" />
+              <span className="text-xs">Consultando dispositivos no GenieACS...</span>
+            </div>
+          ) : displayCpes.length === 0 ? (
+            <div className="p-12 rounded-2xl bg-card border border-border text-center text-muted-foreground space-y-2">
+              <Radio className="w-8 h-8 mx-auto text-zinc-500" />
+              <p className="text-sm font-semibold text-white">Nenhum dispositivo encontrado</p>
+              <p className="text-xs">Não há CPEs cadastradas ou sincronizadas no momento com os critérios de busca.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {displayCpes.map((cpe) => (
               <div
                 key={cpe.id}
                 className="p-5 rounded-2xl bg-card border border-border hover:border-primary/50 transition-all space-y-4 group relative"
@@ -278,6 +245,7 @@ export default function DashboardPage() {
               </div>
             ))}
           </div>
+        )}
         </div>
       </main>
 

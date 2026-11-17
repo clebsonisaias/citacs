@@ -13,14 +13,10 @@ import {
   Sparkles, 
   RefreshCw, 
   RotateCcw, 
-  Trash2, 
-  Cpu, 
   Wifi, 
   Radio, 
-  ShieldAlert,
-  Activity,
-  CheckCircle2,
-  Clock
+  Loader2,
+  AlertCircle
 } from "lucide-react";
 
 export default function CpeDetailsPage({ params }: { params: Promise<{ id: string }> }) {
@@ -29,6 +25,7 @@ export default function CpeDetailsPage({ params }: { params: Promise<{ id: strin
 
   const [cpe, setCpe] = useState<CpeDevice | null>(null);
   const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [copilotOpen, setCopilotOpen] = useState(false);
   const [diagnostic, setDiagnostic] = useState<AiDiagnosticResult | null>(null);
   const [rebooting, setRebooting] = useState(false);
@@ -36,14 +33,20 @@ export default function CpeDetailsPage({ params }: { params: Promise<{ id: strin
 
   const loadCpe = async () => {
     setLoading(true);
+    setErrorMessage(null);
     try {
       const res = await fetch(`/api/cpes/${encodeURIComponent(cpeId)}`);
       if (res.ok) {
         const data = await res.json();
         setCpe(data);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        setErrorMessage(err.message || `Erro ${res.status} ao consultar dispositivo`);
+        setCpe(null);
       }
-    } catch (err) {
-      console.warn("Usando mock enquanto a API carrega", err);
+    } catch (err: any) {
+      setErrorMessage(err.message || "Falha na comunicação com o servidor CITacs");
+      setCpe(null);
     } finally {
       setLoading(false);
     }
@@ -53,60 +56,105 @@ export default function CpeDetailsPage({ params }: { params: Promise<{ id: strin
     loadCpe();
   }, [cpeId]);
 
-  // Fallback se não encontrado
-  const currentCpe: CpeDevice = cpe || {
-    id: cpeId,
-    serialNumber: "HWTC12345678",
-    manufacturer: "Huawei",
-    modelName: "EchoLife HG8145V5",
-    softwareVersion: "V5R019C00S105",
-    hardwareVersion: "HG8145V5-HW01",
-    macAddress: "48:57:02:11:22:33",
-    ipAddress: "100.64.12.45",
-    pppoeUsername: "cliente.joao@citmax",
-    online: true,
-    lastInform: new Date().toISOString(),
-    registeredAt: new Date(Date.now() - 86400000 * 5).toISOString(),
-    optical: {
-      rxDbm: -21.4,
-      txDbm: 2.3,
-      status: "optimal",
-    },
-    wifi: [
-      { index: 1, band: "2.4GHz", ssid: "CITmax_Joao_2G", enabled: true, channel: 6 },
-      { index: 2, band: "5GHz", ssid: "CITmax_Joao_5G", enabled: true, channel: 36 },
-    ],
-  };
-
   const handleReboot = async () => {
-    if (!confirm(`Deseja realmente enviar comando de Reboot para ${currentCpe.serialNumber}?`)) return;
+    if (!cpe) return;
+    if (!confirm(`Deseja realmente enviar comando de Reboot para ${cpe.serialNumber}?`)) return;
     setRebooting(true);
     try {
-      await fetch(`/api/cpes/${encodeURIComponent(currentCpe.id)}/reboot`, { method: "POST" });
-      alert("Comando de Reboot TR-069 disparado com sucesso!");
-    } catch (err) {
-      alert("Falha ao comunicar com o GenieACS.");
+      const res = await fetch(`/api/cpes/${encodeURIComponent(cpe.id)}/reboot`, { method: "POST" });
+      if (res.ok) {
+        alert("Comando de Reboot TR-069 disparado com sucesso!");
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(`Falha ao reiniciar: ${err.message || res.statusText}`);
+      }
+    } catch (err: any) {
+      alert(`Falha ao comunicar com o GenieACS: ${err.message}`);
     } finally {
       setRebooting(false);
     }
   };
 
   const handleRefresh = async () => {
+    if (!cpe) return;
     setRefreshing(true);
     try {
-      await fetch(`/api/cpes/${encodeURIComponent(currentCpe.id)}/refresh`, { method: "POST" });
-      alert("Comando de atualização de parâmetros TR-069 enviado!");
-      await loadCpe();
-    } catch (err) {
-      alert("Falha ao atualizar parâmetros.");
+      const res = await fetch(`/api/cpes/${encodeURIComponent(cpe.id)}/refresh`, { method: "POST" });
+      if (res.ok) {
+        alert("Comando de atualização de parâmetros TR-069 enviado! Recarregando dados...");
+        await loadCpe();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(`Falha ao atualizar parâmetros: ${err.message || res.statusText}`);
+      }
+    } catch (err: any) {
+      alert(`Falha ao atualizar parâmetros: ${err.message}`);
     } finally {
       setRefreshing(false);
     }
   };
 
-  const handleDiagnose = async () => {
+  const handleDiagnose = () => {
     setCopilotOpen(true);
   };
+
+  if (loading && !cpe) {
+    return (
+      <>
+        <Header 
+          copilotOpen={copilotOpen} 
+          onOpenCopilot={() => setCopilotOpen(!copilotOpen)} 
+        />
+        <main className="p-6 flex-1 max-w-7xl mx-auto w-full flex items-center justify-center min-h-[60vh]">
+          <div className="flex flex-col items-center gap-3 text-center">
+            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+            <p className="text-sm font-medium text-white">Carregando dados da CPE via TR-069...</p>
+            <p className="text-xs text-muted-foreground font-mono">{cpeId}</p>
+          </div>
+        </main>
+      </>
+    );
+  }
+
+  if (!loading && !cpe) {
+    return (
+      <>
+        <Header 
+          copilotOpen={copilotOpen} 
+          onOpenCopilot={() => setCopilotOpen(!copilotOpen)} 
+        />
+        <main className="p-6 flex-1 max-w-7xl mx-auto w-full flex items-center justify-center min-h-[60vh]">
+          <div className="p-8 rounded-2xl bg-card border border-border text-center max-w-md space-y-4">
+            <AlertCircle className="w-10 h-10 text-amber-400 mx-auto" />
+            <h3 className="text-base font-bold text-white">Dispositivo não encontrado</h3>
+            <p className="text-xs text-muted-foreground">
+              A CPE <span className="font-mono text-foreground font-semibold">{cpeId}</span> não foi localizada no GenieACS.
+              {errorMessage && <span className="block mt-1 text-red-400">{errorMessage}</span>}
+            </p>
+            <div className="pt-2 flex items-center justify-center gap-3">
+              <button
+                onClick={loadCpe}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-secondary hover:bg-accent border border-border text-xs text-foreground transition-colors"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Tentar Novamente</span>
+              </button>
+              <Link
+                href="/"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>Voltar ao Painel</span>
+              </Link>
+            </div>
+          </div>
+        </main>
+      </>
+    );
+  }
+
+  // Neste ponto cpe é garantidamente real
+  const currentCpe = cpe!;
 
   return (
     <>
@@ -128,7 +176,7 @@ export default function CpeDetailsPage({ params }: { params: Promise<{ id: strin
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-xl font-bold tracking-tight text-white font-mono">
-                  {currentCpe.serialNumber}
+                  {currentCpe.subscriberName ? `${currentCpe.subscriberName} (${currentCpe.serialNumber})` : currentCpe.serialNumber}
                 </h2>
                 <span
                   className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
@@ -141,7 +189,7 @@ export default function CpeDetailsPage({ params }: { params: Promise<{ id: strin
                 </span>
               </div>
               <p className="text-xs text-muted-foreground mt-0.5">
-                {currentCpe.manufacturer} • {currentCpe.modelName} • Firmware: {currentCpe.softwareVersion}
+                {currentCpe.manufacturer} • {currentCpe.modelName} • Firmware: {currentCpe.softwareVersion || "N/D"}
               </p>
             </div>
           </div>
@@ -179,7 +227,7 @@ export default function CpeDetailsPage({ params }: { params: Promise<{ id: strin
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Coluna 1: Cliente, Sinal Óptico e Rede */}
           <div className="space-y-6">
-            <ClienteCard cpeId={cpeId} loginRoteador={cpe?.pppoeUsername} />
+            <ClienteCard cpeId={currentCpe.id} loginRoteador={currentCpe.pppoeUsername} />
             <div className="p-5 rounded-2xl bg-card border border-border space-y-4">
               <h3 className="font-semibold text-sm text-white flex items-center gap-2">
                 <Radio className="w-4 h-4 text-primary" />
@@ -207,7 +255,7 @@ export default function CpeDetailsPage({ params }: { params: Promise<{ id: strin
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Último Inform:</span>
                   <span className="text-foreground font-medium">
-                    {new Date(currentCpe.lastInform).toLocaleString("pt-BR")}
+                    {currentCpe.lastInform ? new Date(currentCpe.lastInform).toLocaleString("pt-BR") : "N/D"}
                   </span>
                 </div>
               </div>

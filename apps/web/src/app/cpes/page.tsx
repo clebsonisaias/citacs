@@ -46,40 +46,7 @@ export default function CpesListPage() {
     fetchCpes();
   }, [search]);
 
-  const defaultList: CpeDevice[] = cpes.length > 0 ? cpes : [
-    {
-      id: "hw-1",
-      serialNumber: "HWTC12345678",
-      manufacturer: "Huawei",
-      modelName: "EchoLife HG8145V5",
-      softwareVersion: "V5R019C00S105",
-      macAddress: "48:57:02:11:22:33",
-      ipAddress: "100.64.12.45",
-      pppoeUsername: "cliente.joao@citmax",
-      online: true,
-      lastInform: new Date().toISOString(),
-      registeredAt: new Date().toISOString(),
-      optical: { rxDbm: -21.4, txDbm: 2.3, status: "optimal" },
-      wifi: [{ index: 1, band: "2.4GHz", ssid: "CITmax_Joao_2G", enabled: true, channel: 6 }],
-    },
-    {
-      id: "zte-2",
-      serialNumber: "ZTEG98765432",
-      manufacturer: "ZTE",
-      modelName: "F670L",
-      softwareVersion: "V9.0.10P1N1",
-      macAddress: "70:A8:E3:44:55:66",
-      ipAddress: "100.64.12.89",
-      pppoeUsername: "cliente.maria@citmax",
-      online: true,
-      lastInform: new Date().toISOString(),
-      registeredAt: new Date().toISOString(),
-      optical: { rxDbm: -27.8, txDbm: 1.8, status: "critical" },
-      wifi: [{ index: 1, band: "2.4GHz", ssid: "Maria_WiFi", enabled: true, channel: 11 }],
-    },
-  ];
-
-  const filteredCpes = defaultList.filter((cpe) => {
+  const filteredCpes = cpes.filter((cpe) => {
     if (statusFilter === "online") return cpe.online;
     if (statusFilter === "critical") return cpe.optical?.status === "critical";
     return true;
@@ -137,7 +104,7 @@ export default function CpesListPage() {
                   : "bg-secondary text-muted-foreground hover:text-foreground"
               }`}
             >
-              Todos ({defaultList.length})
+              Todos ({cpes.length})
             </button>
             <button
               onClick={() => setStatusFilter("online")}
@@ -177,7 +144,24 @@ export default function CpesListPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/60">
-                {filteredCpes.map((cpe) => (
+                {loading && filteredCpes.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="p-12 text-center text-muted-foreground">
+                      <div className="flex flex-col items-center justify-center gap-2">
+                        <RefreshCw className="w-5 h-5 animate-spin text-primary" />
+                        <span>Carregando inventário de dispositivos...</span>
+                      </div>
+                    </td>
+                  </tr>
+                ) : filteredCpes.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="p-12 text-center text-muted-foreground">
+                      <Radio className="w-6 h-6 mx-auto mb-2 text-zinc-500" />
+                      <span>Nenhum dispositivo encontrado no inventário.</span>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredCpes.map((cpe) => (
                   <tr key={cpe.id} className="hover:bg-secondary/20 transition-colors">
                     <td className="p-3.5">
                       <div className="font-semibold text-white">{cpe.subscriberName || cpe.serialNumber}</div>
@@ -243,7 +227,7 @@ export default function CpesListPage() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                )))}
               </tbody>
             </table>
           </div>
