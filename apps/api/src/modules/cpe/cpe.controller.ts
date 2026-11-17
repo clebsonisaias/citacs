@@ -57,4 +57,29 @@ export class CpeController {
   async refresh(@Param('id') id: string) {
     return this.cpeService.refresh(id);
   }
+
+  @Get(':id/diagnostics/ping')
+  async getPingDiagnostics(@Param('id') id: string) {
+    return this.cpeService.getPingDiagnostics(id);
+  }
+
+  @Escrita()
+  @Auditar('ping', { freio: true })
+  @Post(':id/diagnostics/ping')
+  async triggerPingDiagnostics(
+    @Param('id') id: string,
+    @Body() body?: { host?: string; count?: number }
+  ) {
+    return this.cpeService.triggerPingDiagnostics(id, body?.host || '8.8.8.8', body?.count || 4);
+  }
+
+  @Escrita()
+  @Auditar('speedtest', { freio: true })
+  @Post(':id/diagnostics/speedtest')
+  async triggerSpeedtest(
+    @Param('id') id: string,
+    @Body() body?: { downloadUrl?: string }
+  ) {
+    return this.cpeService.triggerSpeedtest(id, body?.downloadUrl);
+  }
 }

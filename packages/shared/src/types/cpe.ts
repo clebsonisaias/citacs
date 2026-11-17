@@ -58,6 +58,17 @@ export interface CpeDevice {
   tenantId?: string;
 }
 
+export interface PingDiagnosticResult {
+  state: string;
+  host: string;
+  successCount: number;
+  failureCount: number;
+  averageResponseTimeMs: number;
+  minimumResponseTimeMs: number;
+  maximumResponseTimeMs: number;
+  packetLossPercent: number;
+}
+
 export type CpeCommandType =
   | 'reboot'
   | 'factoryReset'

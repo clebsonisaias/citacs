@@ -81,4 +81,16 @@ export class CpeService {
   async refresh(id: string): Promise<any> {
     return this.genieacsService.refreshParameters(id, ['InternetGatewayDevice']);
   }
+
+  async getPingDiagnostics(id: string) {
+    return this.genieacsService.getPingDiagnostics(id);
+  }
+
+  async triggerPingDiagnostics(id: string, host = '8.8.8.8', count = 4) {
+    return this.genieacsService.triggerPingDiagnostics(id, host, count);
+  }
+
+  async triggerSpeedtest(id: string, downloadUrl?: string) {
+    return this.genieacsService.triggerSpeedtest(id, downloadUrl);
+  }
 }

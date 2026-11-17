@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
-import { CpeDevice, OpticalPower, LanDevice } from '@citacs/shared';
+import { CpeDevice, OpticalPower, LanDevice, PingDiagnosticResult } from '@citacs/shared';
 import { achatarGenie, caminhosWifi, detectarDataModel, estaOnline, indicesWifi, normalizarParams, paramsDeGenie } from './cpe-normalizer';
 
 @Injectable()
@@ -317,5 +317,113 @@ export class GenieacsService {
       this.extractValue(raw.InternetGatewayDevice?.LANDevice?.['1']?.LANEthernetInterfaceConfig?.['1']?.MACAddress) ||
       this.extractValue(raw.InternetGatewayDevice?.WANDevice?.['1']?.WANConnectionDevice?.['1']?.WANPPPConnection?.['1']?.MACAddress)
     );
+  }
+
+  /**
+   * Obtém os resultados do último teste de IPPingDiagnostics do roteador
+   */
+  async getPingDiagnostics(deviceId: string): Promise<PingDiagnosticResult> {
+    const raw = await this.buscarRaw(deviceId);
+    if (!raw) throw new NotFoundException('Dispositivo não encontrado no ACS');
+    const p = paramsDeGenie(raw);
+
+    const dm = detectarDataModel(p) ?? 'tr098';
+    const prefix = dm === 'tr181' ? 'Device.IP.Diagnostics.IPPing' : 'InternetGatewayDevice.IPPingDiagnostics';
+
+    const state = p[`${prefix}.DiagnosticsState`] || 'None';
+    const host = p[`${prefix}.Host`] || '';
+    const success = Number(p[`${prefix}.SuccessCount`]) || 0;
+    const failure = Number(p[`${prefix}.FailureCount`]) || 0;
+    const avg = Number(p[`${prefix}.AverageResponseTime`]) || 0;
+    const min = Number(p[`${prefix}.MinimumResponseTime`]) || 0;
+    const max = Number(p[`${prefix}.MaximumResponseTime`]) || 0;
+
+    const total = success + failure;
+    const lossPercent = total > 0 ? Math.round((failure / total) * 100) : 0;
+
+    return {
+      state,
+      host,
+      successCount: success,
+      failureCount: failure,
+      averageResponseTimeMs: avg,
+      minimumResponseTimeMs: min,
+      maximumResponseTimeMs: max,
+      packetLossPercent: lossPercent,
+    };
+  }
+
+  /**
+   * Dispara um teste de Ping TR-069 a partir do roteador do cliente
+   */
+  async triggerPingDiagnostics(deviceId: string, host = '8.8.8.8', count = 4): Promise<any> {
+    this.logger.log(`Disparando IPPingDiagnostics para CPE ${deviceId} -> Host: ${host}`);
+    const raw = await this.buscarRaw(deviceId);
+    if (!raw) throw new NotFoundException('Dispositivo não encontrado no ACS');
+    const p = paramsDeGenie(raw);
+
+    const dm = detectarDataModel(p) ?? 'tr098';
+    const prefix = dm === 'tr181' ? 'Device.IP.Diagnostics.IPPing' : 'InternetGatewayDevice.IPPingDiagnostics';
+
+    const parameterValues: [string, string, string][] = [
+      [`${prefix}.Host`, host, 'xsd:string'],
+      [`${prefix}.NumberOfRepetitions`, String(count), 'xsd:unsignedInt'],
+      [`${prefix}.Timeout`, '1000', 'xsd:unsignedInt'],
+      [`${prefix}.DataBlockSize`, '64', 'xsd:unsignedInt'],
+      [`${prefix}.DiagnosticsState`, 'Requested', 'xsd:string'],
+    ];
+
+    const response = await this.client.post(
+      `/devices/${encodeURIComponent(deviceId)}/tasks?timeout=3000&connection_request`,
+      { name: 'setParameterValues', parameterValues }
+    );
+
+    // Enfileira refresh automático para capturar os resultados assim que a CPE terminar
+    await this.client.post(
+      `/devices/${encodeURIComponent(deviceId)}/tasks`,
+      { name: 'refreshObject', objectName: prefix }
+    ).catch(() => {});
+
+    return {
+      aplicada: response.status === 200,
+      tarefa: response.data,
+      host,
+      count,
+    };
+  }
+
+  /**
+   * Dispara teste de velocidade de Download TR-143
+   */
+  async triggerSpeedtest(deviceId: string, downloadUrl?: string): Promise<any> {
+    this.logger.log(`Disparando TR-143 DownloadDiagnostics para CPE ${deviceId}`);
+    const raw = await this.buscarRaw(deviceId);
+    if (!raw) throw new NotFoundException('Dispositivo não encontrado no ACS');
+    const p = paramsDeGenie(raw);
+
+    const dm = detectarDataModel(p) ?? 'tr098';
+    const prefix = dm === 'tr181' ? 'Device.IP.Diagnostics.DownloadDiagnostics' : 'InternetGatewayDevice.DownloadDiagnostics';
+
+    const url = downloadUrl || 'http://speedtest.citmax.com.br/test100M.bin';
+    const parameterValues: [string, string, string][] = [
+      [`${prefix}.DownloadURL`, url, 'xsd:string'],
+      [`${prefix}.DiagnosticsState`, 'Requested', 'xsd:string'],
+    ];
+
+    const response = await this.client.post(
+      `/devices/${encodeURIComponent(deviceId)}/tasks?timeout=3000&connection_request`,
+      { name: 'setParameterValues', parameterValues }
+    );
+
+    await this.client.post(
+      `/devices/${encodeURIComponent(deviceId)}/tasks`,
+      { name: 'refreshObject', objectName: prefix }
+    ).catch(() => {});
+
+    return {
+      aplicada: response.status === 200,
+      tarefa: response.data,
+      downloadUrl: url,
+    };
   }
 }
