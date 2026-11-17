@@ -33,6 +33,54 @@ export class SgpService {
     return !!(this.app && this.token);
   }
 
+  /**
+   * Consulta uma ONU específica no SGP FTTX por phy_addr / serial PON (resposta instantânea em ~200ms).
+   */
+  async buscarOnuPorPhyAddr(phyAddr: string): Promise<any | null> {
+    if (!this.configurado) return null;
+    const limpo = (phyAddr || '').replace(/[:-]/g, '').trim();
+    if (!limpo) return null;
+
+    const tentar = async (valor: string) => {
+      try {
+        const p = new URLSearchParams({ app: this.app, token: this.token, phy_addr: valor });
+        const r = await fetch(`${this.url}/api/fttx/onu/list/?${p.toString()}`, {
+          method: 'GET',
+          signal: AbortSignal.timeout(8_000),
+        });
+        if (!r.ok) return null;
+        const d: any = await r.json();
+        const list = Array.isArray(d) ? d : (d?.onus || d?.results || []);
+        return list[0] || null;
+      } catch {
+        return null;
+      }
+    };
+
+    let res = await tentar(limpo);
+    if (res) return res;
+
+    // Se começou com caracteres ASCII (ex: HWTC...), converte o prefixo para hex (ex: 48575443...)
+    if (/^[A-Za-z]{4}/.test(limpo)) {
+      const hexPrefix = Buffer.from(limpo.slice(0, 4), 'utf8').toString('hex').toUpperCase();
+      const emHex = hexPrefix + limpo.slice(4);
+      res = await tentar(emHex);
+      if (res) return res;
+    }
+
+    // Se começou com hex (ex: 48575443...), converte para ASCII (ex: HWTC...)
+    if (/^[0-9A-Fa-f]{8}/.test(limpo)) {
+      try {
+        const asciiPrefix = Buffer.from(limpo.slice(0, 8), 'hex').toString('utf8');
+        const emAscii = asciiPrefix + limpo.slice(8);
+        res = await tentar(emAscii);
+        if (res) return res;
+      } catch {}
+    }
+
+    return null;
+  }
+
   /** Lista ONUs com telemetria óptica do SGP (com cache em memória de 5 minutos). */
   async listarOnusComTelemetria(): Promise<any[]> {
     if (!this.configurado) return [];

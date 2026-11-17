@@ -65,10 +65,14 @@ export class ZtpService implements OnModuleDestroy {
 
     this.logger.log(`[ZTP] Requisição de provisionamento recebida - Serial: ${rawSerial}, MAC: ${rawMac || 'N/A'}`);
 
-    // Busca nas ONUs autorizadas do SGP
-    const onus = await this.sgpService.listarOnusComTelemetria();
+    // 1. Busca direta ultrarrápida por phy_addr no SGP FTTX (~200ms)
+    let onuEncontrada: any = await this.sgpService.buscarOnuPorPhyAddr(rawSerial);
+    if (!onuEncontrada && rawMac) {
+      onuEncontrada = await this.sgpService.buscarOnuPorPhyAddr(rawMac);
+    }
 
-    let onuEncontrada: any = null;
+    // 2. Fallback na lista geral caso seja serial truncado ou divergence
+    const onus = !onuEncontrada ? await this.sgpService.listarOnusComTelemetria() : [];
 
     if (onus && onus.length > 0) {
       onuEncontrada = onus.find((onu: any) => {
