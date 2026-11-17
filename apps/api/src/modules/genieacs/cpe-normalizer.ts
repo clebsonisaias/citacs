@@ -253,7 +253,7 @@ export function normalizarParams(p: Params): CpeNormalizada {
       'Device.IP.Interface.2.IPv4Address.1.IPAddress',
       'Device.IP.Interface.1.IPv4Address.1.IPAddress',
     ]),
-    pppoeUser: primeiro(p, [`${ppp}.Username`, `${pppTr181}.Username`]),
+    pppoeUser: primeiro(p, [`${ppp}.Username`, `${pppTr181}.Username`]) ?? primeiroPorRegex(p, /(WANPPPConnection\.\d+|Device\.PPP\.Interface\.\d+)\.Username$/),
     wanUptimeSeg: num(primeiro(p, [`${ppp}.Uptime`])),
     sinalRx: normalizarDbm(primeiro(p, RX_CANDIDATOS) ?? primeiroPorRegex(p, RX_RE), LIMITE_RX),
     sinalTx: normalizarDbm(primeiro(p, TX_CANDIDATOS) ?? primeiroPorRegex(p, TX_RE), LIMITE_TX),

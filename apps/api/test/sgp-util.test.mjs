@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { extrairCliente, normalizarLogin, planoMbps } from '../src/modules/sgp/sgp-util.ts';
+import { extrairCliente, normalizarLogin, planoMbps, resolverVinculoCliente } from '../src/modules/sgp/sgp-util.ts';
 
 // Formato real de /ws/radius/radacct/list/all/ (valores inventados).
 const resposta = {
@@ -43,4 +43,42 @@ test('plano: tira a velocidade do nome', () => {
 
 test('login: compara sem espaço e sem maiúscula (o roteador manda "Kovausk ")', () => {
   assert.equal(normalizarLogin('Kovausk '), normalizarLogin('kovausk'));
+});
+
+test('vinculo: prioriza login PPPoE e vincula com segurança mesmo em IP dinâmico/CGNAT', () => {
+  const teobaldo = { nome: 'TEOBALDO GUEDES', pppoeLogin: 'teobaldo.guedes', plano: '500M', planoMbps: 500, online: true, servicoId: 10, endereco: null, bairro: null, cidade: null };
+  const outro = { nome: 'OUTRO CLIENTE', pppoeLogin: 'outro.cliente', plano: '200M', planoMbps: 200, online: true, servicoId: 99, endereco: null, bairro: null, cidade: null };
+
+  const cpe = { pppoeUsername: 'teobaldo.guedes', ipAddress: '100.65.18.235' };
+  const r = resolverVinculoCliente(cpe, teobaldo, outro);
+  assert.equal(r.metodo, 'login');
+  assert.equal(r.loginConfere, true);
+  assert.equal(r.cliente?.nome, 'TEOBALDO GUEDES');
+});
+
+test('vinculo: bloqueia atribuição indevida quando o IP pertence a outro cliente', () => {
+  const maria = { nome: 'MARIA EXEMPLO', pppoeLogin: 'maria', plano: '500M', planoMbps: 500, online: true, servicoId: 42, endereco: null, bairro: null, cidade: null };
+  const cpe = { pppoeUsername: 'teobaldo.guedes', ipAddress: '100.65.18.235' };
+
+  // Login do Teobaldo não encontrado ainda no SGP, mas o IP pertence à Maria no CGNAT
+  const r = resolverVinculoCliente(cpe, null, maria);
+  assert.equal(r.cliente, null, 'NÃO pode atribuir Maria ao roteador do Teobaldo');
+  assert.equal(r.loginConfere, false);
+  assert.ok(r.motivo?.includes('possui sessão de outro assinante'));
+});
+
+test('vinculo: aceita fallback por IP quando os logins conferem ou quando é IPoE', () => {
+  const joao = { nome: 'JOAO SILVA', pppoeLogin: 'joao.silva', plano: '300M', planoMbps: 300, online: true, servicoId: 1, endereco: null, bairro: null, cidade: null };
+
+  // Logins batem
+  const r1 = resolverVinculoCliente({ pppoeUsername: 'joao.silva', ipAddress: '10.0.0.1' }, null, joao);
+  assert.equal(r1.metodo, 'ip');
+  assert.equal(r1.cliente?.nome, 'JOAO SILVA');
+  assert.equal(r1.loginConfere, true);
+
+  // Sem login no roteador (IPoE)
+  const r2 = resolverVinculoCliente({ ipAddress: '10.0.0.1' }, null, joao);
+  assert.equal(r2.metodo, 'ip');
+  assert.equal(r2.cliente?.nome, 'JOAO SILVA');
+  assert.equal(r2.loginConfere, null);
 });
