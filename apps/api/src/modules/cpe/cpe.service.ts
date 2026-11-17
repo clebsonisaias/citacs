@@ -75,6 +75,11 @@ export class CpeService {
     radioBand: '2.4GHz' | '5GHz',
     config: { ssid?: string; password?: string; channel?: number | 'auto' }
   ): Promise<any> {
+    if (config.ssid) {
+      // Padrão institucional exclusivo NetGo: NetGo_xxxx
+      const sufixo = config.ssid.replace(/^NetGo_/i, '').trim();
+      config.ssid = `NetGo_${sufixo}`;
+    }
     return this.genieacsService.setWifiConfig(id, radioBand, config);
   }
 

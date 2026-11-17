@@ -137,9 +137,17 @@ export class ZtpService implements OnModuleDestroy {
     const oltNome = onuEncontrada.olt_name;
     const cto = onuEncontrada.cto;
 
-    // Busca detalhes completos do contrato e senha PPPoE no SGP URA
-    let pppoeSenha = '123'; // fallback seguro
-    let wifiSsid = `Maxxi_${clienteNome.split(' ')[0]}`;
+    // Formata o primeiro nome do assinante sem acentos (ex: JOSÉ -> Jose)
+    const extrairPrimeiroNome = (nomeCompleto: string) => {
+      const primeiro = (nomeCompleto || '').trim().split(' ')[0] || 'Cliente';
+      const semAcento = primeiro.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      return semAcento.charAt(0).toUpperCase() + semAcento.slice(1).toLowerCase();
+    };
+
+    const nomeFormatado = extrairPrimeiroNome(clienteNome);
+    // Padrão institucional exclusivo NetGo: NetGo_xxxx
+    let wifiSsid = `NetGo_${nomeFormatado}`;
+    let pppoeSenha = '123';
     let wifiSenha = '';
 
     try {
@@ -166,7 +174,8 @@ export class ZtpService implements OnModuleDestroy {
             pppoeSenha = contrato.servico_senha;
           }
           if (contrato.servico_wifi_ssid) {
-            wifiSsid = contrato.servico_wifi_ssid;
+            const custom = contrato.servico_wifi_ssid.replace(/^NetGo_/i, '').trim();
+            wifiSsid = `NetGo_${custom || nomeFormatado}`;
           }
           if (contrato.servico_wifi_password) {
             wifiSenha = contrato.servico_wifi_password;
@@ -184,7 +193,7 @@ export class ZtpService implements OnModuleDestroy {
     }
 
     if (!wifiSenha) {
-      wifiSenha = 'maxxi' + (contratoId || '12345');
+      wifiSenha = 'netgo' + (contratoId || '12345');
     }
 
     // Registra o sucesso no banco de auditoria ZTP
