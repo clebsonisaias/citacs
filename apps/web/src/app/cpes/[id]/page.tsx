@@ -4,6 +4,7 @@ import { useEffect, useState, use } from "react";
 import { Header } from "@/components/layout/header";
 import { AiCopilotDrawer } from "@/components/ai/ai-copilot-drawer";
 import { OpticalGauge } from "@/components/cpe/optical-gauge";
+import { OnuBridgeCard } from "@/components/cpe/onu-bridge-card";
 import { WifiManager } from "@/components/cpe/wifi-manager";
 import { LanDevices } from "@/components/cpe/lan-devices";
 import { NetworkDiagnostics } from "@/components/cpe/network-diagnostics";
@@ -230,12 +231,23 @@ export default function CpeDetailsPage({ params }: { params: Promise<{ id: strin
           {/* Coluna 1: Cliente, Sinal Óptico e Rede */}
           <div className="space-y-6">
             <ClienteCard cpeId={currentCpe.id} loginRoteador={currentCpe.pppoeUsername} />
+            <OnuBridgeCard
+              cpeId={currentCpe.id}
+              routerOpticalRx={currentCpe.optical?.rxDbm}
+              routerModel={currentCpe.modelName}
+            />
             <div className="p-5 rounded-2xl bg-card border border-border space-y-4">
               <h3 className="font-semibold text-sm text-white flex items-center gap-2">
                 <Radio className="w-4 h-4 text-primary" />
-                <span>Telemetria Óptica (GPON)</span>
+                <span>
+                  {currentCpe.optical?.rxDbm !== null && currentCpe.optical?.rxDbm !== undefined
+                    ? "Telemetria Óptica da ONT (TR-069)"
+                    : "Dados do Roteador Wi-Fi (ACS)"}
+                </span>
               </h3>
-              <OpticalGauge optical={currentCpe.optical} />
+              {currentCpe.optical?.rxDbm !== null && currentCpe.optical?.rxDbm !== undefined && (
+                <OpticalGauge optical={currentCpe.optical} />
+              )}
               
               <div className="space-y-2 text-xs pt-2 border-t border-border/40 font-mono">
                 <div className="flex justify-between">

@@ -69,6 +69,33 @@ export interface PingDiagnosticResult {
   packetLossPercent: number;
 }
 
+export interface OnuBridgeTelemetry {
+  encontrado: boolean;
+  isBridge: boolean;
+  onuId?: number;
+  modelo?: string;
+  fabricante?: string;
+  serial?: string;
+  serialFormatado?: string;
+  oltNome?: string;
+  slot?: number;
+  pon?: number;
+  onuid?: number;
+  vlan?: number;
+  cto?: string;
+  ctoPorta?: number;
+  status?: string;
+  sinalRxDbm?: number | null;
+  sinalTxDbm?: number | null;
+  sinalOltRxDbm?: number | null;
+  distanciaMetros?: number | null;
+  temperaturaC?: number | null;
+  voltagemV?: number | null;
+  tempoOnline?: string | null;
+  ultimoMotivoQueda?: string | null;
+  atualizadoEm?: string | null;
+}
+
 export type CpeCommandType =
   | 'reboot'
   | 'factoryReset'

@@ -9,6 +9,7 @@ import {
   Post,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { OnuBridgeTelemetry } from '@citacs/shared';
 import { GenieacsService } from '../genieacs/genieacs.service';
 import { ClienteSgp, extrairCliente, normalizarLogin, resolverVinculoCliente, ResultadoClienteRoteador } from './sgp-util';
 
@@ -145,6 +146,166 @@ export class SgpService {
       throw new ServiceUnavailableException(`Falha ao desconectar PPPoE: ${(e as Error).message}`);
     }
   }
+
+  /**
+   * Consulta a ONU Bridge externa vinculada ao contrato do assinante via SGP FTTX.
+   * Utilizada quando o roteador no ACS não possui interface GPON integrada (ex: Huawei Wi-Fi 6 ligado a ONU Intelbras Bridge).
+   */
+  async onuBridgeDoCliente(opts: { contrato?: string | number; login?: string; cpfcnpj?: string }): Promise<OnuBridgeTelemetry> {
+    if (!this.configurado) {
+      return { encontrado: false, isBridge: false };
+    }
+
+    let contrato = opts.contrato ? String(opts.contrato) : '';
+
+    // Se não tiver contrato, busca pelo login PPPoE no SGP via /api/ura/consultacliente/
+    if (!contrato && opts.login) {
+      try {
+        const form = new FormData();
+        form.set('app', this.app);
+        form.set('token', this.token);
+        form.set('login', opts.login.trim());
+        const r = await fetch(`${this.url}/api/ura/consultacliente/`, {
+          method: 'POST',
+          body: form,
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (r.ok) {
+          const d: any = await r.json();
+          if (d?.contratos?.[0]?.contratoId) {
+            contrato = String(d.contratos[0].contratoId);
+          }
+        }
+      } catch (e) {
+        this.logger.warn(`Falha ao buscar contrato por login ${opts.login}: ${(e as Error).message}`);
+      }
+    }
+
+    if (!contrato) {
+      return { encontrado: false, isBridge: false };
+    }
+
+    // Consulta ONU no SGP FTTX
+    try {
+      const p = new URLSearchParams({
+        app: this.app,
+        token: this.token,
+        contrato,
+      });
+      const r = await fetch(`${this.url}/api/fttx/onu/list/?${p.toString()}`, {
+        method: 'GET',
+        signal: AbortSignal.timeout(12_000),
+      });
+
+      if (!r.ok) {
+        throw new Error(`SGP FTTX list respondeu ${r.status}`);
+      }
+
+      const d: any = await r.json();
+      const onus: any[] = Array.isArray(d) ? d : (d?.onus || d?.results || []);
+
+      if (!onus.length) {
+        return { encontrado: false, isBridge: false };
+      }
+
+      const onu = onus[0];
+      const serialHex = onu.phy_addr || '';
+      let fabricante = 'Desconhecido';
+      let serialFormatado = serialHex;
+
+      if (serialHex.length >= 8) {
+        try {
+          const prefix = Buffer.from(serialHex.slice(0, 8), 'hex').toString('utf8');
+          serialFormatado = `${prefix}-${serialHex.slice(8)}`;
+          if (prefix.toUpperCase().includes('ITBS')) fabricante = 'Intelbras';
+          else if (prefix.toUpperCase().includes('HWTC')) fabricante = 'Huawei';
+          else if (prefix.toUpperCase().includes('ZTEG')) fabricante = 'ZTE';
+          else if (prefix.toUpperCase().includes('FHTT')) fabricante = 'Fiberhome';
+          else if (prefix.toUpperCase().includes('VSOL')) fabricante = 'V-SOL';
+          else fabricante = prefix;
+        } catch {}
+      }
+
+      let sinalRxDbm = onu.info_rx ? parseFloat(onu.info_rx) : null;
+      let sinalTxDbm = onu.info_tx ? parseFloat(onu.info_tx) : null;
+      let sinalOltRxDbm = onu.info_olt_rx ? parseFloat(onu.info_olt_rx) : null;
+      let distanciaMetros: number | null = null;
+      let temperaturaC: number | null = null;
+      let voltagemV: number | null = null;
+      let tempoOnline: string | null = null;
+      let ultimoMotivoQueda: string | null = null;
+      let status = onu.service_status === 1 ? 'online' : 'offline';
+
+      // Tenta obter telemetria em tempo real da OLT via /api/fttx/onu/:id/info/
+      if (onu.id) {
+        try {
+          const pInfo = new URLSearchParams({ app: this.app, token: this.token });
+          const rInfo = await fetch(`${this.url}/api/fttx/onu/${onu.id}/info/?${pInfo.toString()}`, {
+            method: 'GET',
+            signal: AbortSignal.timeout(10_000),
+          });
+          if (rInfo.ok) {
+            const dInfo: any = await rInfo.json();
+            const text: string = typeof dInfo?.result === 'string' ? dInfo.result : JSON.stringify(dInfo);
+
+            const rxM = text.match(/Rx optical power\(dBm\)\s*:\s*(-?\d+\.?\d*)/i);
+            const txM = text.match(/Tx optical power\(dBm\)\s*:\s*(-?\d+\.?\d*)/i);
+            const oltRxM = text.match(/OLT Rx ONT optical power\(dBm\)\s*:\s*(-?\d+\.?\d*)/i);
+            const tempM = text.match(/Temperature\(C\)\s*:\s*(\d+)/i);
+            const voltM = text.match(/Voltage\(V\)\s*:\s*([\d.]+)/i);
+            const distM = text.match(/ONT distance\(m\)\s*:\s*(\d+)/i);
+            const runM = text.match(/Run state\s*:\s*(\w+)/i);
+            const snM = text.match(/SN\s*:\s*([A-Za-z0-9]+)\s*\(([^)]+)\)/i);
+            const durM = text.match(/ONT online duration\s*:\s*([^\r\n]+)/i);
+            const downM = text.match(/Last down cause\s*:\s*([^\r\n]+)/i);
+
+            if (rxM) sinalRxDbm = parseFloat(rxM[1]);
+            if (txM) sinalTxDbm = parseFloat(txM[1]);
+            if (oltRxM) sinalOltRxDbm = parseFloat(oltRxM[1]);
+            if (tempM) temperaturaC = parseInt(tempM[1], 10);
+            if (voltM) voltagemV = parseFloat(voltM[1]);
+            if (distM) distanciaMetros = parseInt(distM[1], 10);
+            if (runM) status = runM[1].toLowerCase();
+            if (snM) serialFormatado = snM[2].trim();
+            if (durM) tempoOnline = durM[1].trim();
+            if (downM) ultimoMotivoQueda = downM[1].trim();
+          }
+        } catch (e) {
+          this.logger.debug(`infoOnu detalhado falhou (usando valores do SGP): ${(e as Error).message}`);
+        }
+      }
+
+      return {
+        encontrado: true,
+        isBridge: true,
+        onuId: onu.id,
+        modelo: onu.type || 'ONU Bridge',
+        fabricante,
+        serial: serialHex,
+        serialFormatado,
+        oltNome: onu.olt_name,
+        slot: onu.slot,
+        pon: onu.pon,
+        onuid: onu.onuid,
+        vlan: onu.vlan,
+        cto: onu.cto,
+        ctoPorta: onu.ctoport,
+        status,
+        sinalRxDbm,
+        sinalTxDbm,
+        sinalOltRxDbm,
+        distanciaMetros,
+        temperaturaC,
+        voltagemV,
+        tempoOnline,
+        ultimoMotivoQueda,
+        atualizadoEm: onu.info_date || new Date().toISOString(),
+      };
+    } catch (e) {
+      this.logger.warn(`Falha ao consultar ONU Bridge para contrato ${contrato}: ${(e as Error).message}`);
+      return { encontrado: false, isBridge: false };
+    }
+  }
 }
 
 @Controller('cpes')
@@ -184,5 +345,30 @@ export class ClienteController {
     const login = cpe.pppoeUsername;
     if (!login) throw new BadRequestException('Dispositivo não possui usuário PPPoE configurado');
     return this.sgp.desconectarPppoe(login);
+  }
+
+  /** Telemetria óptica da ONU Bridge externa vinculada via SGP/OLT. */
+  @Get(':id/onu-bridge')
+  async onuBridge(@Param('id') id: string) {
+    if (!this.sgp.configurado) return { configurado: false, encontrado: false, isBridge: false };
+    const achado = await this.genieacs.getDeviceComParams(id);
+    if (!achado) throw new NotFoundException('Dispositivo não encontrado no ACS');
+    const { cpe } = achado;
+
+    // Obtém dados do cliente/contrato
+    const cliRes = await this.sgp.clienteDoRoteador(cpe);
+    const login = cpe.pppoeUsername || cliRes.cliente?.pppoeLogin;
+
+    const bridge = await this.sgp.onuBridgeDoCliente({ login });
+    return {
+      configurado: true,
+      roteadorAcs: {
+        id: cpe.id,
+        fabricante: cpe.manufacturer,
+        modelo: cpe.modelName,
+        serial: cpe.serialNumber,
+      },
+      ...bridge,
+    };
   }
 }
