@@ -12,6 +12,11 @@ export class CpeController {
     return this.cpeService.listCpes(search);
   }
 
+  @Get('radar/alertas')
+  async obterRadarAlertas() {
+    return this.cpeService.obterRadarPreditivo();
+  }
+
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return this.cpeService.getCpeById(id);
@@ -51,6 +56,16 @@ export class CpeController {
     }
   ) {
     return this.cpeService.configureWifi(id, body.band, body);
+  }
+
+  @Escrita()
+  @Auditar('wifi-otimizar', { freio: true })
+  @Post(':id/wifi/otimizar')
+  async otimizarWifi(
+    @Param('id') id: string,
+    @Body() body: { band: '2.4GHz' | '5GHz' }
+  ) {
+    return this.cpeService.otimizarCanalWifi(id, body.band);
   }
 
   @Post(':id/refresh')

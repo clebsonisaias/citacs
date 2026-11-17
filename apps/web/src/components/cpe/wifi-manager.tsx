@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { WifiRadio } from "@citacs/shared";
-import { Wifi, Lock, Radio, Save, Check, Loader2 } from "lucide-react";
+import { Wifi, Lock, Radio, Save, Check, Loader2, Sparkles } from "lucide-react";
 
 interface WifiManagerProps {
   cpeId: string;
@@ -59,6 +59,30 @@ const CANAIS_5G = [
 export function WifiManager({ cpeId, wifiRadios, onUpdated }: WifiManagerProps) {
   const [loadingBand, setLoadingBand] = useState<string | null>(null);
   const [successBand, setSuccessBand] = useState<string | null>(null);
+  const [otimizando, setOtimizando] = useState<string | null>(null);
+  const [msgOtimizacao, setMsgOtimizacao] = useState<string | null>(null);
+
+  const handleOtimizarCanal = async (band: "2.4GHz" | "5GHz") => {
+    setOtimizando(band);
+    setMsgOtimizacao(null);
+    try {
+      const res = await fetch(`/api/cpes/${encodeURIComponent(cpeId)}/wifi/otimizar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ band }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message || `Erro ${res.status}`);
+      setMsgOtimizacao(`✓ ${data.motivo || "Canal otimizado com sucesso!"}`);
+      if (band === "2.4GHz") setForm24((prev) => ({ ...prev, channel: data.canalNovo }));
+      else setForm5G((prev) => ({ ...prev, channel: data.canalNovo }));
+      if (onUpdated) onUpdated();
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setOtimizando(null);
+    }
+  };
 
   // Form states
   const radio24 = wifiRadios?.find((r) => r.band === "2.4GHz");
@@ -200,6 +224,24 @@ export function WifiManager({ cpeId, wifiRadios, onUpdated }: WifiManagerProps) 
                   </option>
                 ))}
               </select>
+              <button
+                type="button"
+                onClick={() => handleOtimizarCanal("2.4GHz")}
+                disabled={otimizando === "2.4GHz"}
+                className="w-full mt-1.5 flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-primary/30 bg-primary/10 text-primary text-[11px] font-semibold hover:bg-primary/20 transition-all disabled:opacity-50"
+              >
+                {otimizando === "2.4GHz" ? (
+                  <>
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    <span>Analisando Espectro...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-3 h-3" />
+                    <span>Otimizar Canal com IA</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
 
@@ -286,6 +328,24 @@ export function WifiManager({ cpeId, wifiRadios, onUpdated }: WifiManagerProps) 
                   </option>
                 ))}
               </select>
+              <button
+                type="button"
+                onClick={() => handleOtimizarCanal("5GHz")}
+                disabled={otimizando === "5GHz"}
+                className="w-full mt-1.5 flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 text-emerald-400 text-[11px] font-semibold hover:bg-emerald-500/20 transition-all disabled:opacity-50"
+              >
+                {otimizando === "5GHz" ? (
+                  <>
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    <span>Analisando Espectro...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-3 h-3" />
+                    <span>Otimizar Canal com IA</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
 
@@ -315,6 +375,12 @@ export function WifiManager({ cpeId, wifiRadios, onUpdated }: WifiManagerProps) 
       ) : (
         <div className="p-4 rounded-xl bg-card border border-border flex items-center justify-center text-xs text-muted-foreground">
           Interface 5 GHz não disponível nesta CPE
+        </div>
+      )}
+      {msgOtimizacao && (
+        <div className="col-span-1 md:col-span-2 p-2.5 rounded-xl bg-primary/10 border border-primary/20 text-xs text-primary font-medium flex items-center gap-2 animate-in fade-in">
+          <Sparkles className="w-4 h-4 shrink-0" />
+          <span>{msgOtimizacao}</span>
         </div>
       )}
     </div>

@@ -27,9 +27,33 @@ export class SgpService {
   private readonly token = process.env.SGP_TOKEN || '';
   // Cache em memória por chave (username:<login> ou ip:<ip>)
   private readonly cache = new Map<string, { em: number; valor: ClienteSgp | null }>();
+  private onusCache: { em: number; dados: any[] } | null = null;
 
   get configurado() {
     return !!(this.app && this.token);
+  }
+
+  /** Lista ONUs com telemetria óptica do SGP (com cache em memória de 5 minutos). */
+  async listarOnusComTelemetria(): Promise<any[]> {
+    if (!this.configurado) return [];
+    if (this.onusCache && Date.now() - this.onusCache.em < 5 * 60_000) {
+      return this.onusCache.dados;
+    }
+    try {
+      const p = new URLSearchParams({ app: this.app, token: this.token });
+      const r = await fetch(`${this.url}/api/fttx/onu/list/?${p.toString()}`, {
+        method: 'GET',
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (!r.ok) throw new Error(`SGP FTTX respondeu ${r.status}`);
+      const d: any = await r.json();
+      const list = Array.isArray(d) ? d : (d?.onus || d?.results || []);
+      this.onusCache = { em: Date.now(), dados: list };
+      return list;
+    } catch (e) {
+      this.logger.warn(`Falha ao carregar lista geral de ONUs: ${(e as Error).message}`);
+      return this.onusCache?.dados || [];
+    }
   }
 
   private async consultarSgp(campo: 'username' | 'framedipaddress', valor: string): Promise<ClienteSgp | null> {

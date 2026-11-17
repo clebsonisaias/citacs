@@ -103,3 +103,47 @@ export type CpeCommandType =
   | 'setParameterValues'
   | 'wifiConfig'
   | 'pingDiagnostic';
+
+export type TipoAlertaRadar =
+  | 'fibra_critica'
+  | 'fibra_atencao'
+  | 'cluster_cto'
+  | 'wifi_poluido'
+  | 'quedas_frequentes';
+
+export interface AlertaRadarPreditivo {
+  id: string;
+  tipo: TipoAlertaRadar;
+  severidade: 'critica' | 'alta' | 'media';
+  clienteNome: string;
+  login: string;
+  contrato?: string | number;
+  equipamento: string;
+  cpeId?: string;
+  sinalRxDbm?: number | null;
+  sinalTxDbm?: number | null;
+  sinalOltRxDbm?: number | null;
+  oltNome?: string;
+  slot?: number;
+  pon?: number;
+  cto?: string;
+  ctoPorta?: number;
+  diagnostico: string;
+  acaoSugerida: string;
+  mensagemClienteSugerida: string;
+  identificadoEm: string;
+}
+
+export interface ResumoRadarPreditivo {
+  totalEmRisco: number;
+  criticos: number;
+  atencao: number;
+  clustersCto: number;
+  problemasWifi: number;
+  geradoEm: string;
+}
+
+export interface RespostaRadarPreditivo {
+  resumo: ResumoRadarPreditivo;
+  alertas: AlertaRadarPreditivo[];
+}

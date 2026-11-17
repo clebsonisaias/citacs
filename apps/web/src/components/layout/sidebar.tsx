@@ -55,6 +55,7 @@ export function Sidebar() {
 
   const navItems = [
     { label: "Visão Geral", href: "/", icon: Activity },
+    { label: "Radar Proativo", href: "/radar", icon: ShieldCheck, badge: "NOC" },
     { label: "CPEs / ONTs", href: "/cpes", icon: Radio },
     { label: "Copilot IA NOC", href: "/ai-copilot", icon: Sparkles, badge: "AI" },
     { label: "Diagnósticos em Lote", href: "/diagnostics", icon: Cpu },
