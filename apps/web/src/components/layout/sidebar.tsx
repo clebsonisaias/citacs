@@ -58,6 +58,7 @@ export function Sidebar() {
     { label: "Visão Geral", href: "/", icon: Activity },
     { label: "Radar Proativo", href: "/radar", icon: ShieldCheck, badge: "NOC" },
     { label: "Auto-Ativação ZTP", href: "/ztp", icon: Zap, badge: "ZTP" },
+    { label: "Firmwares & OTA", href: "/firmwares", icon: Cpu },
     { label: "CPEs / ONTs", href: "/cpes", icon: Radio },
     { label: "Copilot IA NOC", href: "/ai-copilot", icon: Sparkles, badge: "AI" },
     { label: "Diagnósticos em Lote", href: "/diagnostics", icon: Cpu },

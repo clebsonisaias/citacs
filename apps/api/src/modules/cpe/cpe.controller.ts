@@ -17,6 +17,21 @@ export class CpeController {
     return this.cpeService.obterRadarPreditivo();
   }
 
+  @Get('radar/incidentes')
+  async obterIncidentesFibra() {
+    return this.cpeService.detectarIncidentesFibra();
+  }
+
+  @Get('radar/fantasmas')
+  async obterComodatosFantasma() {
+    return this.cpeService.auditarComodatosFantasma();
+  }
+
+  @Get(':id/diagnostics/linha')
+  async obterDiagnosticoLinha(@Param('id') id: string) {
+    return this.cpeService.obterDiagnosticoLinhaTr143(id);
+  }
+
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return this.cpeService.getCpeById(id);

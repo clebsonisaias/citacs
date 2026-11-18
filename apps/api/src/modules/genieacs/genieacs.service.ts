@@ -426,4 +426,40 @@ export class GenieacsService {
       downloadUrl: url,
     };
   }
+
+  /**
+   * Obtém os resultados do último teste de DownloadDiagnostics TR-143 do roteador
+   */
+  async getSpeedtestDiagnostics(deviceId: string): Promise<any> {
+    const raw = await this.buscarRaw(deviceId);
+    if (!raw) throw new NotFoundException('Dispositivo não encontrado no ACS');
+    const p = paramsDeGenie(raw);
+
+    const dm = detectarDataModel(p) ?? 'tr098';
+    const prefix = dm === 'tr181' ? 'Device.IP.Diagnostics.DownloadDiagnostics' : 'InternetGatewayDevice.DownloadDiagnostics';
+
+    const state = p[`${prefix}.DiagnosticsState`] || 'None';
+    const bomTime = p[`${prefix}.BOMTime`];
+    const eomTime = p[`${prefix}.EOMTime`];
+    const bytes = Number(p[`${prefix}.TestBytesReceived`]) || Number(p[`${prefix}.TotalBytesReceived`]) || 0;
+
+    let durationMs = 0;
+    if (bomTime && eomTime) {
+      durationMs = Math.max(new Date(eomTime).getTime() - new Date(bomTime).getTime(), 1);
+    }
+
+    let speedMbps = 0;
+    if (bytes > 0 && durationMs > 0) {
+      speedMbps = Math.round(((bytes * 8) / (durationMs / 1000) / 1_000_000) * 100) / 100;
+    }
+
+    return {
+      state,
+      downloadUrl: p[`${prefix}.DownloadURL`] || '',
+      bytesReceived: bytes,
+      durationMs,
+      speedMbps,
+      completed: state === 'Complete',
+    };
+  }
 }

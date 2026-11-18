@@ -180,3 +180,84 @@ export interface ZtpRegistroLog {
   detalhes?: string;
   criadoEm: string;
 }
+
+export interface IncidenteFibra {
+  id: string;
+  oltNome: string;
+  slot: number;
+  pon: number;
+  ctosAfetadas: string[];
+  totalClientesAfetados: number;
+  clientes: {
+    nome: string;
+    login: string;
+    contrato?: string | number;
+    cto?: string;
+    sinalAnteriorRx?: number | null;
+  }[];
+  tipo: 'ROMPIMENTO_CABO' | 'FALHA_ENERGIA_CTO' | 'QUEDA_PON';
+  probabilidadeRompimento: number;
+  horarioInicio: string;
+  status: 'EM_ANDAMENTO' | 'NORMALIZADO';
+  diagnosticoIa: string;
+  acaoRecomendadaFusao: string;
+}
+
+export interface Tr143PingResult {
+  host: string;
+  repeticoes: number;
+  sucesso: boolean;
+  pacotesEnviados: number;
+  pacotesRecebidos: number;
+  perdaPct: number;
+  latenciaMinMs?: number;
+  latenciaMedMs?: number;
+  latenciaMaxMs?: number;
+  executadoEm: string;
+}
+
+export interface Tr143SpeedtestResult {
+  sucesso: boolean;
+  velocidadeDownloadMbps: number;
+  bytesRecebidos: number;
+  tempoDecorridoMs: number;
+  planoContratadoMbps?: number;
+  atingimentoPlanoPct?: number;
+  vereditoIa: string;
+  executadoEm: string;
+}
+
+export interface CpeFantasmaAlerta {
+  id: string;
+  tipo: 'EQUIPAMENTO_DIVERGENTE' | 'CLIENTE_CANCELADO_ATIVO' | 'SERIAL_NAO_CADASTRADO';
+  serialAcs: string;
+  macAcs?: string;
+  fabricante?: string;
+  modelo?: string;
+  loginPppoe?: string;
+  clienteSgpNome?: string;
+  contratoId?: string;
+  contratoStatus?: string;
+  serialSgpEsperado?: string;
+  macSgpEsperado?: string;
+  identificadoEm: string;
+  detalhes: string;
+}
+
+export interface CampanhaFirmware {
+  id: string;
+  nome: string;
+  fabricante: string;
+  modelo: string;
+  versaoOrigem: string;
+  versaoDestino: string;
+  arquivoFirmwareUrl: string;
+  janelaInicio: string;
+  janelaFim: string;
+  limitePorHora: number;
+  status: 'PLANEJADA' | 'EM_EXECUCAO' | 'CONCLUIDA' | 'PAUSADA';
+  totalAlvos: number;
+  atualizadosComSucesso: number;
+  falhas: number;
+  criadoEm: string;
+}

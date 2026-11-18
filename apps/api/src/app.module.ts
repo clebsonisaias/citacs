@@ -8,6 +8,7 @@ import { SgpModule } from './modules/sgp/sgp.module';
 import { IntegracaoModule } from './modules/integracao/integracao.module';
 import { SaudeModule } from './modules/saude/saude.module';
 import { ZtpModule } from './modules/ztp/ztp.module';
+import { FirmwareModule } from './modules/firmware/firmware.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { ZtpModule } from './modules/ztp/ztp.module';
     IntegracaoModule,
     SaudeModule,
     ZtpModule,
+    FirmwareModule,
   ],
 })
 export class AppModule {}

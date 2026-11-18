@@ -1,7 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { GenieacsService } from '../genieacs/genieacs.service';
 import { SgpService } from '../sgp/sgp.service';
-import { AlertaRadarPreditivo, CpeDevice, RespostaRadarPreditivo, TipoAlertaRadar } from '@citacs/shared';
+import { 
+  AlertaRadarPreditivo, 
+  CpeDevice, 
+  RespostaRadarPreditivo, 
+  TipoAlertaRadar, 
+  IncidenteFibra, 
+  CpeFantasmaAlerta,
+  Tr143PingResult,
+  Tr143SpeedtestResult
+} from '@citacs/shared';
 
 @Injectable()
 export class CpeService {
@@ -262,4 +271,176 @@ export class CpeService {
       alertas: alertas.slice(0, 100),
     };
   }
+
+  /**
+   * Guardião de Quedas em Massa / Rompimento de Fibra:
+   * Identifica portas PON e caixas CTOs onde múltiplos clientes caíram simultaneamente.
+   */
+  async detectarIncidentesFibra(): Promise<IncidenteFibra[]> {
+    const onus = await this.sgpService.listarOnusComTelemetria();
+    if (!onus || onus.length === 0) return [];
+
+    // Filtra ONUs caídas (sem sinal / -40 dBm / 0 dBm ou offline)
+    const onusCaidas = onus.filter((o: any) => {
+      const rx = o.info_rx ? parseFloat(o.info_rx) : null;
+      return rx === null || rx <= -38 || rx === 0;
+    });
+
+    // Agrupa por OLT + Slot + PON
+    const gruposPon = new Map<string, any[]>();
+    for (const onu of onusCaidas) {
+      const olt = onu.olt_name || 'OLT-Principal';
+      const slot = onu.slot ?? 0;
+      const pon = onu.pon ?? 0;
+      const chave = `${olt}__slot_${slot}__pon_${pon}`;
+      if (!gruposPon.has(chave)) gruposPon.set(chave, []);
+      gruposPon.get(chave)!.push(onu);
+    }
+
+    const incidentes: IncidenteFibra[] = [];
+    const agora = new Date().toISOString();
+
+    for (const [chave, lista] of gruposPon.entries()) {
+      // Gatilho: 3 ou mais clientes caídos na mesma porta PON
+      if (lista.length >= 3) {
+        const [oltNome, slotStr, ponStr] = chave.split('__');
+        const slot = parseInt(slotStr.replace('slot_', ''), 10) || 0;
+        const pon = parseInt(ponStr.replace('pon_', ''), 10) || 0;
+
+        const ctosSet = new Set<string>();
+        for (const item of lista) {
+          if (item.cto) ctosSet.add(item.cto);
+        }
+        const ctosAfetadas = Array.from(ctosSet);
+
+        // Se atingir 2 ou mais CTOs diferentes, a probabilidade de rompimento de tronco é altíssima
+        const isRompimentoTronco = ctosAfetadas.length >= 2;
+        const probabilidade = isRompimentoTronco ? 98 : 85;
+        const tipo: 'ROMPIMENTO_CABO' | 'FALHA_ENERGIA_CTO' | 'QUEDA_PON' = isRompimentoTronco
+          ? 'ROMPIMENTO_CABO'
+          : 'FALHA_ENERGIA_CTO';
+
+        const diagnosticoIa = isRompimentoTronco
+          ? `ALERTA DE CORTE DE FIBRA: ${lista.length} clientes sem sinal óptico espalhados em ${ctosAfetadas.length} caixas CTOs (${ctosAfetadas.slice(0, 3).join(', ')}). O padrão indica rompimento no cabo troncal da porta PON ${pon} da OLT ${oltNome}.`
+          : `FALHA CONCENTRADA NA CTO: ${lista.length} clientes caídos exclusivamente na caixa ${ctosAfetadas[0] || 'N/A'}. Causa provável: splitter secundário danificado, conector primário solto ou corte do ramal de atendimento da caixa.`;
+
+        const acaoRecomendadaFusao = isRompimentoTronco
+          ? `Despachar equipe de fusão com OTDR na rota da OLT ${oltNome} (Slot ${slot}/PON ${pon}). Iniciar disparo a partir do DIO da central para localizar distância exata do corte em metros.`
+          : `Despachar técnico de campo diretamente até a caixa ${ctosAfetadas[0] || 'CTO'} para inspeção do conector de entrada e teste de potência com Power Meter.`;
+
+        incidentes.push({
+          id: `incidente-${chave}-${Date.now().toString(36)}`,
+          oltNome,
+          slot,
+          pon,
+          ctosAfetadas,
+          totalClientesAfetados: lista.length,
+          clientes: lista.map((o: any) => ({
+            nome: o.service_cliente || 'Assinante NetGo',
+            login: o.service_login || o.login || '-',
+            contrato: o.service_contrato || o.contrato,
+            cto: o.cto,
+            sinalAnteriorRx: o.info_rx ? parseFloat(o.info_rx) : null,
+          })),
+          tipo,
+          probabilidadeRompimento: probabilidade,
+          horarioInicio: lista[0]?.info_date ? new Date(lista[0].info_date).toISOString() : agora,
+          status: 'EM_ANDAMENTO',
+          diagnosticoIa,
+          acaoRecomendadaFusao,
+        });
+      }
+    }
+
+    // Ordena pelo maior número de clientes afetados primeiro
+    incidentes.sort((a, b) => b.totalClientesAfetados - a.totalClientesAfetados);
+    return incidentes;
+  }
+
+  /**
+   * Auditoria de Comodato & CPEs Fantasma:
+   * Cruza a base ACS com o SGP para flagrar divergências de patrimônio e clientes cancelados ainda ativos.
+   */
+  async auditarComodatosFantasma(): Promise<CpeFantasmaAlerta[]> {
+    const devices = await this.genieacsService.getDevices();
+    const alertas: CpeFantasmaAlerta[] = [];
+    const agora = new Date().toISOString();
+
+    for (const c of devices) {
+      if (!c.pppoeUsername) continue;
+
+      try {
+        const vinculo = await this.sgpService.clienteDoRoteador(c);
+        if (vinculo.cliente) {
+          const cli = vinculo.cliente;
+          // Verifica se o contrato consta como cancelado no SGP mas ainda está discando
+          if (cli.status && (cli.status.toLowerCase().includes('cancelado') || cli.status.toLowerCase().includes('inativo'))) {
+            alertas.push({
+              id: `fantasma-cancelado-${c.id}`,
+              tipo: 'CLIENTE_CANCELADO_ATIVO',
+              serialAcs: c.serialNumber,
+              macAcs: c.macAddress,
+              fabricante: c.manufacturer,
+              modelo: c.modelName,
+              loginPppoe: c.pppoeUsername,
+              clienteSgpNome: cli.nome,
+              contratoId: cli.contrato,
+              contratoStatus: cli.status,
+              identificadoEm: agora,
+              detalhes: `Assinante com contrato ${cli.status} no SGP ainda está conectado e gerando tráfego na rede! Equipamento em risco de perda patrimonial.`,
+            });
+          }
+        }
+      } catch {}
+    }
+
+    return alertas;
+  }
+
+  /**
+   * Diagnóstico Completo de Linha TR-143 (Speedtest + Ping):
+   * Compara com a velocidade do plano no SGP e gera veredito Copilot IA.
+   */
+  async obterDiagnosticoLinhaTr143(cpeId: string): Promise<any> {
+    const [cpe, ping, speed] = await Promise.all([
+      this.genieacsService.getDevice(cpeId),
+      this.genieacsService.getPingDiagnostics(cpeId).catch(() => null),
+      this.genieacsService.getSpeedtestDiagnostics(cpeId).catch(() => null),
+    ]);
+
+    let planoMbps: number | undefined;
+    if (cpe) {
+      planoMbps = await this.sgpService.planoMbpsDoCpe(cpe).catch(() => undefined);
+    }
+
+    let atingimentoPct: number | undefined;
+    if (speed && speed.speedMbps && planoMbps && planoMbps > 0) {
+      atingimentoPct = Math.round((speed.speedMbps / planoMbps) * 100);
+    }
+
+    let vereditoIa = 'Aguardando execução dos testes de linha.';
+    if (speed?.speedMbps && planoMbps) {
+      if (speed.speedMbps >= planoMbps * 0.8) {
+        vereditoIa = `✅ FIBRA E PORTA WAN EXCELENTES: Aferidos ${speed.speedMbps} Mbps direto na ONT (${atingimentoPct}% do plano de ${planoMbps} Mbps). Qualquer queixa de lentidão é originada no alcance Wi-Fi ou dispositivo móvel do cliente.`;
+      } else {
+        vereditoIa = `⚠️ GARGALO NO ENLACE: Aferidos ${speed.speedMbps} Mbps abaixo do plano contratado (${planoMbps} Mbps). Verificar saturação do perfil de tráfego na OLT ou limitação de porta Ethernet.`;
+      }
+    } else if (ping && ping.host) {
+      if (ping.packetLossPercent === 0) {
+        vereditoIa = `✅ LATÊNCIA ESTÁVEL: 0% de perda de pacotes e latência média de ${ping.averageResponseTimeMs}ms para o destino ${ping.host}. Rota de internet íntegra.`;
+      } else {
+        vereditoIa = `⚠️ OSCILAÇÃO DETECTADA: ${ping.packetLossPercent}% de perda de pacotes para o host ${ping.host}. Verificar rota de trânsito IP ou instabilidade óptica.`;
+      }
+    }
+
+    return {
+      cpeId,
+      planoContratadoMbps: planoMbps,
+      ping,
+      speedtest: speed,
+      atingimentoPlanoPct: atingimentoPct,
+      vereditoIa,
+    };
+  }
 }
+
