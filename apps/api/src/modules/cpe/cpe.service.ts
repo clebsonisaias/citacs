@@ -372,9 +372,9 @@ export class CpeService {
       try {
         const vinculo = await this.sgpService.clienteDoRoteador(c);
         if (vinculo.cliente) {
-          const cli = vinculo.cliente;
+          const cli = vinculo.cliente as any;
           // Verifica se o contrato consta como cancelado no SGP mas ainda está discando
-          if (cli.status && (cli.status.toLowerCase().includes('cancelado') || cli.status.toLowerCase().includes('inativo'))) {
+          if (cli.status && (String(cli.status).toLowerCase().includes('cancelado') || String(cli.status).toLowerCase().includes('inativo'))) {
             alertas.push({
               id: `fantasma-cancelado-${c.id}`,
               tipo: 'CLIENTE_CANCELADO_ATIVO',
@@ -384,7 +384,7 @@ export class CpeService {
               modelo: c.modelName,
               loginPppoe: c.pppoeUsername,
               clienteSgpNome: cli.nome,
-              contratoId: cli.contrato,
+              contratoId: cli.contrato || cli.contratoId || cli.servicoId,
               contratoStatus: cli.status,
               identificadoEm: agora,
               detalhes: `Assinante com contrato ${cli.status} no SGP ainda está conectado e gerando tráfego na rede! Equipamento em risco de perda patrimonial.`,
@@ -403,7 +403,7 @@ export class CpeService {
    */
   async obterDiagnosticoLinhaTr143(cpeId: string): Promise<any> {
     const [cpe, ping, speed] = await Promise.all([
-      this.genieacsService.getDevice(cpeId),
+      this.getCpeById(cpeId),
       this.genieacsService.getPingDiagnostics(cpeId).catch(() => null),
       this.genieacsService.getSpeedtestDiagnostics(cpeId).catch(() => null),
     ]);

@@ -97,7 +97,7 @@ export class WahaService {
       }
     }
 
-    const totalHosts = cpe.lanDevicesCount || cpe.lanDevices?.length || 0;
+    const totalHosts = (cpe as any).connectedDevices || (cpe as any).hostsCount || cpe.hosts?.length || 0;
 
     let mensagemWhatsapp = `Olá, *${primeiroNome}*! Sou o assistente inteligente da *NetGo*. 🚀\n\n`;
     mensagemWhatsapp += `Realizei um diagnóstico automático no seu roteador:\n`;
