@@ -685,9 +685,9 @@ export default function RadarPage() {
                 <div className="flex items-center gap-2">
                   <ShieldAlert className="w-5 h-5 text-amber-400" />
                   <div>
-                    <h3 className="text-sm font-bold text-white">Guardião de Conformidade NetGo (Configuration Drift)</h3>
+                    <h3 className="text-sm font-bold text-white">Guardião de Conformidade NetGo (Novas Instalações & Fábrica)</h3>
                     <p className="text-xs text-muted-foreground">
-                      Detecta desvios das diretrizes obrigatórias da NetGo (SSID com prefixo fixo NetGo_, porta remota :55013 e VLAN 200).
+                      Detecta equipamentos <strong>novos ou recém-instalados</strong> ainda com SSID genérico de fábrica (ex: HUAWEI-xxxx, ZTE-xxxx). <strong>Clientes antigos com Wi-Fi personalizado são 100% preservados</strong> para não desconectar os aparelhos da casa.
                     </p>
                   </div>
                 </div>
@@ -708,8 +708,8 @@ export default function RadarPage() {
               ) : drifts.length === 0 ? (
                 <div className="p-8 text-center rounded-2xl bg-card border border-border space-y-1.5">
                   <CheckCircle2 className="w-7 h-7 text-emerald-400 mx-auto" />
-                  <h4 className="text-sm font-semibold text-white">100% da base em conformidade com o padrão NetGo</h4>
-                  <p className="text-xs text-muted-foreground">Todos os roteadores ativos estão com prefixo NetGo_ e porta :55013 alinhados.</p>
+                  <h4 className="text-sm font-semibold text-white">Nenhum equipamento novo com SSID genérico de fábrica</h4>
+                  <p className="text-xs text-muted-foreground">Todos os novos equipamentos receberam o padrão NetGo_ e clientes antigos estão com seu Wi-Fi personalizado 100% preservado.</p>
                 </div>
               ) : (
                 <div className="space-y-3">

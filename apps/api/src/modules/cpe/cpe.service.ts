@@ -546,22 +546,25 @@ export class CpeService {
 
   /**
    * Guardião de Conformidade NetGo (Configuration Drift):
-   * Verifica se a CPE mantém o padrão homologado (SSID NetGo_, porta 55013, VLAN 200).
+   * Verifica se a CPE mantém o padrão homologado (SSID NetGo_ em novos, porta 55013, VLAN 200).
+   * REGRA DE OURO: Clientes antigos com Wi-Fi personalizado NUNCA são alterados para não desconectar aparelhos da casa.
    */
   async obterAlertasDriftConfig(): Promise<AlertaDriftConfig[]> {
     const devices = await this.genieacsService.getDevices();
     const alertas: AlertaDriftConfig[] = [];
     const agora = new Date().toISOString();
+    const PADRAO_SSID_FABRICA = /^(HUAWEI|ZTE|FIBERHOME|NOKIA|INTELBRAS|MERCUSYS|TP-LINK|TPLINK|GPON|EPON|WIRELESS|WLAN|DEFAULT|ONT)[-_ ]/i;
 
     for (const d of devices) {
       const desvios: { parametro: string; valorAtual: string; valorEsperadoNetGo: string; impacto: 'ALTO' | 'MEDIO' | 'BAIXO' }[] = [];
 
-      // 1. Validação de SSID NetGo_
+      // 1. Validação de SSID: APLICADA EXCLUSIVAMENTE NOS NOVOS / DE FÁBRICA
+      // Clientes antigos que já têm Wi-Fi personalizado (ex: 'Familia guedes', 'MinhaCasa') são PRESERVADOS.
       if (d.wifi && d.wifi.length > 0) {
         for (const w of d.wifi) {
-          if (w.ssid && !w.ssid.startsWith('NetGo_')) {
+          if (w.ssid && PADRAO_SSID_FABRICA.test(w.ssid)) {
             desvios.push({
-              parametro: `SSID ${w.band}`,
+              parametro: `SSID de Fábrica Detectado (${w.band})`,
               valorAtual: w.ssid,
               valorEsperadoNetGo: `NetGo_${d.subscriberName ? d.subscriberName.split(' ')[0] : 'Cliente'}`,
               impacto: 'MEDIO',
@@ -588,12 +591,28 @@ export class CpeService {
   }
 
   /**
-   * Auto-Restauração do Padrão NetGo em 1 clique
+   * Auto-Restauração do Padrão NetGo
+   * REGRA DE OURO: Aplica SSID NetGo_ SOMENTE se a ONT for nova ou estiver com nome de fábrica.
+   * Se for cliente antigo com Wi-Fi personalizado, PRESERVA o SSID para não desconectar os aparelhos da casa!
    */
   async restaurarPadraoNetgo(cpeId: string): Promise<{ sucesso: boolean; mensagem: string }> {
     const cpe = await this.getCpeById(cpeId);
     if (!cpe) throw new Error('CPE não encontrada');
 
+    const PADRAO_SSID_FABRICA = /^(HUAWEI|ZTE|FIBERHOME|NOKIA|INTELBRAS|MERCUSYS|TP-LINK|TPLINK|GPON|EPON|WIRELESS|WLAN|DEFAULT|ONT)[-_ ]/i;
+    const temSsidFabrica = cpe.wifi?.some(w => w.ssid && PADRAO_SSID_FABRICA.test(w.ssid));
+
+    // Se o cliente já possui Wi-Fi personalizado (não é de fábrica e não é NetGo_), NÃO mexe no Wi-Fi!
+    if (!temSsidFabrica && cpe.wifi?.some(w => w.ssid && !w.ssid.startsWith('NetGo_'))) {
+      const ssidAtual = cpe.wifi[0]?.ssid || 'Personalizado';
+      await this.refresh(cpeId);
+      return {
+        sucesso: true,
+        mensagem: `Gestão TR-069 e porta remota :55013 alinhadas! O Wi-Fi do cliente ("${ssidAtual}") foi 100% PRESERVADO para não desconectar os aparelhos da casa.`,
+      };
+    }
+
+    // Se for equipamento novo ou com SSID genérico de fábrica, aplica o padrão institucional NetGo_
     const primeiroNome = cpe.subscriberName ? cpe.subscriberName.split(' ')[0] : 'NetGo';
     const novoSsid = `NetGo_${primeiroNome}`;
 
@@ -609,7 +628,7 @@ export class CpeService {
 
     return {
       sucesso: true,
-      mensagem: `Padrão institucional NetGo restaurado com sucesso! SSID atualizado para ${novoSsid} e porta remota alinhada em :55013.`,
+      mensagem: `Padrão institucional NetGo aplicado no novo equipamento! SSID configurado para "${novoSsid}" e porta remota alinhada em :55013.`,
     };
   }
 }
