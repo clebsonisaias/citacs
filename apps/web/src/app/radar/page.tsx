@@ -2,7 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { Header } from "@/components/layout/header";
-import { RespostaRadarPreditivo, AlertaRadarPreditivo, IncidenteFibra, CpeFantasmaAlerta } from "@citacs/shared";
+import { 
+  RespostaRadarPreditivo, 
+  AlertaRadarPreditivo, 
+  IncidenteFibra, 
+  CpeFantasmaAlerta,
+  AlertaSentinelaOptica,
+  AlertaGargaloEthernet,
+  AlertaDriftConfig,
+} from "@citacs/shared";
 import {
   AlertCircle,
   AlertTriangle,
@@ -23,11 +31,14 @@ import {
   PhoneCall,
   Check,
   Send,
+  Activity,
+  Network,
+  RotateCcw,
 } from "lucide-react";
 import Link from "next/link";
 
 export default function RadarPage() {
-  const [abaPrincipal, setAbaPrincipal] = useState<"alertas" | "rompimentos" | "fantasmas" | "autocura">("alertas");
+  const [abaPrincipal, setAbaPrincipal] = useState<"alertas" | "sentinela" | "gargalos" | "rompimentos" | "fantasmas" | "autocura">("alertas");
   
   // Dados de Alertas Preditivos
   const [data, setData] = useState<RespostaRadarPreditivo | null>(null);
@@ -36,6 +47,20 @@ export default function RadarPage() {
   const [search, setSearch] = useState("");
   const [filtro, setFiltro] = useState<"todos" | "critica" | "alta" | "cluster" | "wifi">("todos");
   const [copiadoId, setCopiadoId] = useState<string | null>(null);
+
+  // Sentinela Óptica Preditiva
+  const [sentinelas, setSentinelas] = useState<AlertaSentinelaOptica[]>([]);
+  const [loadingSentinela, setLoadingSentinela] = useState(false);
+
+  // Gargalos Ethernet 10/100M
+  const [gargalos, setGargalos] = useState<AlertaGargaloEthernet[]>([]);
+  const [loadingGargalos, setLoadingGargalos] = useState(false);
+
+  // Guardião de Conformidade NetGo (Drift)
+  const [drifts, setDrifts] = useState<AlertaDriftConfig[]>([]);
+  const [loadingDrifts, setLoadingDrifts] = useState(false);
+  const [restaurandoId, setRestaurandoId] = useState<string | null>(null);
+  const [msgSucessoDrift, setMsgSucessoDrift] = useState<string | null>(null);
 
   // Dados do Guardião de Rompimentos
   const [incidentes, setIncidentes] = useState<IncidenteFibra[]>([]);
@@ -64,6 +89,36 @@ export default function RadarPage() {
       .finally(() => setLoading(false));
   };
 
+  const carregarSentinela = () => {
+    setLoadingSentinela(true);
+    fetch("/api/cpes/radar/sentinela")
+      .then(async (res) => {
+        if (res.ok) setSentinelas(await res.json());
+      })
+      .catch(() => {})
+      .finally(() => setLoadingSentinela(false));
+  };
+
+  const carregarGargalos = () => {
+    setLoadingGargalos(true);
+    fetch("/api/cpes/radar/gargalos-ethernet")
+      .then(async (res) => {
+        if (res.ok) setGargalos(await res.json());
+      })
+      .catch(() => {})
+      .finally(() => setLoadingGargalos(false));
+  };
+
+  const carregarDrifts = () => {
+    setLoadingDrifts(true);
+    fetch("/api/cpes/radar/drift")
+      .then(async (res) => {
+        if (res.ok) setDrifts(await res.json());
+      })
+      .catch(() => {})
+      .finally(() => setLoadingDrifts(false));
+  };
+
   const carregarIncidentes = () => {
     setLoadingIncidentes(true);
     fetch("/api/cpes/radar/incidentes")
@@ -84,8 +139,25 @@ export default function RadarPage() {
       .finally(() => setLoadingFantasmas(false));
   };
 
+  const restaurarPadraoNetgo = async (cpeId: string) => {
+    setRestaurandoId(cpeId);
+    setMsgSucessoDrift(null);
+    try {
+      const res = await fetch(`/api/cpes/${encodeURIComponent(cpeId)}/restaurar-padrao-netgo`, { method: "POST" });
+      const json = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setMsgSucessoDrift(json.mensagem || "Padrão NetGo restaurado com sucesso!");
+        carregarDrifts();
+      }
+    } catch {}
+    setRestaurandoId(null);
+  };
+
   useEffect(() => {
     carregarRadar();
+    carregarSentinela();
+    carregarGargalos();
+    carregarDrifts();
     carregarIncidentes();
     carregarFantasmas();
   }, []);
@@ -165,6 +237,9 @@ export default function RadarPage() {
           <button
             onClick={() => {
               carregarRadar();
+              carregarSentinela();
+              carregarGargalos();
+              carregarDrifts();
               carregarIncidentes();
               carregarFantasmas();
             }}
@@ -188,6 +263,30 @@ export default function RadarPage() {
           >
             <Radio className="w-4 h-4" />
             <span>Atenuações & Wi-Fi ({resumo?.totalEmRisco ?? "..."})</span>
+          </button>
+
+          <button
+            onClick={() => setAbaPrincipal("sentinela")}
+            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all flex items-center gap-2 ${
+              abaPrincipal === "sentinela"
+                ? "bg-cyan-600 text-white shadow-sm shadow-cyan-600/30"
+                : "bg-secondary/60 text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Activity className="w-4 h-4 text-cyan-400" />
+            <span>📉 Sentinela Óptica Preditiva ({sentinelas.length})</span>
+          </button>
+
+          <button
+            onClick={() => setAbaPrincipal("gargalos")}
+            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all flex items-center gap-2 ${
+              abaPrincipal === "gargalos"
+                ? "bg-indigo-600 text-white shadow-sm shadow-indigo-600/30"
+                : "bg-secondary/60 text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Network className="w-4 h-4 text-indigo-400" />
+            <span>🔌 Gargalos Ethernet & Drift ({gargalos.length + drifts.length})</span>
           </button>
 
           <button
@@ -407,6 +506,251 @@ export default function RadarPage() {
                     </div>
                   </div>
                 ))
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── ABA: SENTINELA ÓPTICA PREDITIVA ────────────────────────── */}
+        {abaPrincipal === "sentinela" && (
+          <div className="space-y-4">
+            <div className="p-4 rounded-2xl bg-cyan-500/10 border border-cyan-500/25 flex items-start gap-3">
+              <Activity className="w-5 h-5 text-cyan-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <h3 className="text-sm font-bold text-white">Sentinela Óptica Preditiva NetGo</h3>
+                <p className="text-xs text-zinc-300 leading-relaxed">
+                  Monitoramento de atenuação progressiva e velocidade de degradação do sinal óptico. Classifica hipóteses diagnósticas (conector sujo, curvatura de drop em postes, emendas atenuadas) para abertura de O.S. preventiva <strong>antes que o cliente sofra queda total</strong>.
+                </p>
+              </div>
+            </div>
+
+            {loadingSentinela ? (
+              <div className="p-12 text-center text-muted-foreground flex flex-col items-center gap-2">
+                <Loader2 className="w-6 h-6 animate-spin text-cyan-400" />
+                <p className="text-xs">Processando telemetria de atenuação óptica...</p>
+              </div>
+            ) : sentinelas.length === 0 ? (
+              <div className="p-12 text-center rounded-2xl bg-card border border-border space-y-2">
+                <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
+                <h4 className="text-sm font-semibold text-white">Todas as fibras ópticas operando em níveis estáveis</h4>
+                <p className="text-xs text-muted-foreground">Nenhuma ONT com tendência de atenuação acentuada ou conector degradado no momento.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {sentinelas.map((s) => (
+                  <div key={s.id} className="p-5 rounded-2xl bg-card border border-border space-y-3 hover:border-cyan-500/40 transition-colors">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-border">
+                      <div className="flex items-center gap-2.5">
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                            s.taxaDegradacao === "CRITICA"
+                              ? "bg-rose-500/20 text-rose-400 border border-rose-500/30"
+                              : s.taxaDegradacao === "MODERADA"
+                              ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                              : "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30"
+                          }`}
+                        >
+                          Risco {s.taxaDegradacao}
+                        </span>
+                        <h4 className="font-semibold text-sm text-white">{s.clienteNome || "Cliente sem vínculo"}</h4>
+                        {s.loginPppoe && <span className="text-xs font-mono text-muted-foreground">({s.loginPppoe})</span>}
+                      </div>
+
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="text-muted-foreground">Serial:</span>
+                        <Link href={`/cpes/${s.cpeId}`} className="font-mono text-primary hover:underline font-semibold">
+                          {s.serialNumber}
+                        </Link>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className="p-3 rounded-xl bg-secondary/40 border border-border space-y-0.5">
+                        <span className="text-[10px] text-muted-foreground uppercase font-semibold">Sinal Rx Atual</span>
+                        <div className="text-sm font-bold text-rose-400">{s.rxAtualDbm} dBm</div>
+                      </div>
+                      <div className="p-3 rounded-xl bg-secondary/40 border border-border space-y-0.5">
+                        <span className="text-[10px] text-muted-foreground uppercase font-semibold">Rx Nominal Padrão</span>
+                        <div className="text-sm font-semibold text-emerald-400">{s.rxNominalDbm} dBm</div>
+                      </div>
+                      <div className="p-3 rounded-xl bg-secondary/40 border border-border space-y-0.5">
+                        <span className="text-[10px] text-muted-foreground uppercase font-semibold">Atenuação Acumulada</span>
+                        <div className="text-sm font-bold text-amber-400">{s.deltaDegradacaoDbm} dBm</div>
+                      </div>
+                      <div className="p-3 rounded-xl bg-secondary/40 border border-border space-y-0.5">
+                        <span className="text-[10px] text-muted-foreground uppercase font-semibold">Hipótese Provável</span>
+                        <div className="text-xs font-semibold text-cyan-400 truncate">{s.hipoteseCausa.replace("_", " ")}</div>
+                      </div>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-cyan-950/20 border border-cyan-500/20 text-xs text-cyan-200 leading-relaxed flex items-start justify-between gap-3">
+                      <div>
+                        <strong>Recomendação de O.S. Preventiva:</strong> {s.recomendacaoOs}
+                      </div>
+                      <button
+                        onClick={() =>
+                          copiarTexto(
+                            `sent-${s.id}`,
+                            `[OS PREVENTIVA SENTINELA ÓPTICA NETGO]\nCliente: ${s.clienteNome || "N/D"} (${s.loginPppoe || "-"})\nSerial ONT: ${s.serialNumber}\nSinal Atual: ${s.rxAtualDbm} dBm (Perda: ${s.deltaDegradacaoDbm} dBm vs nominal)\nHipótese: ${s.hipoteseCausa}\nAção de Campo: ${s.recomendacaoOs}`
+                          )
+                        }
+                        className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 shrink-0 flex items-center gap-1 transition-colors"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>{copiadoId === `sent-${s.id}` ? "✓ Copiado!" : "Copiar O.S."}</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── ABA: GARGALOS ETHERNET & DRIFT NETGO ────────────────────── */}
+        {abaPrincipal === "gargalos" && (
+          <div className="space-y-6">
+            {/* Bloco 1: Gargalos de Cabo/Porta 100M */}
+            <div className="space-y-3">
+              <div className="p-4 rounded-2xl bg-indigo-500/10 border border-indigo-500/25 flex items-start gap-3">
+                <Network className="w-5 h-5 text-indigo-400 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <h3 className="text-sm font-bold text-white">Auditor de Gargalos Ethernet (100 Mbps em Planos Altos)</h3>
+                  <p className="text-xs text-zinc-300 leading-relaxed">
+                    Identifica assinantes que contrataram planos superiores a 100 Mbps (300M, 600M, 800M), mas cujo aparelho cabeado negociou em <strong>100 Mbps Fast Ethernet</strong> devido a cabo Cat5 antigo, cabo de 4 vias ou placa de rede obsoleta, limitando a velocidade a 94 Mbps.
+                  </p>
+                </div>
+              </div>
+
+              {loadingGargalos ? (
+                <div className="p-8 text-center text-muted-foreground flex flex-col items-center gap-2">
+                  <Loader2 className="w-5 h-5 animate-spin text-indigo-400" />
+                  <p className="text-xs">Auditando portas LAN e taxas negociadas...</p>
+                </div>
+              ) : gargalos.length === 0 ? (
+                <div className="p-8 text-center rounded-2xl bg-card border border-border space-y-1.5">
+                  <CheckCircle2 className="w-7 h-7 text-emerald-400 mx-auto" />
+                  <h4 className="text-sm font-semibold text-white">Nenhum gargalo de cabo Ethernet detectado</h4>
+                  <p className="text-xs text-muted-foreground">Todos os aparelhos cabeados em planos altos estão operando em velocidade Gigabit.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {gargalos.map((g) => (
+                    <div key={g.id} className="p-4 rounded-2xl bg-card border border-border space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-border">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
+                            Limitado a 100M
+                          </span>
+                          <h4 className="font-semibold text-sm text-white">{g.clienteNome || "Cliente"}</h4>
+                          <span className="text-xs font-mono text-muted-foreground">({g.loginPppoe})</span>
+                        </div>
+                        <div className="text-xs font-semibold text-rose-400">
+                          Perda Potencial: ~{g.perdaPotencialMbps} Mbps desperdiçados
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+                        <div className="p-2.5 rounded-xl bg-secondary/40 border border-border">
+                          <span className="text-[10px] text-muted-foreground">Plano Contratado</span>
+                          <div className="font-bold text-white text-sm">{g.planoContratadoMbps} Mbps</div>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-secondary/40 border border-border">
+                          <span className="text-[10px] text-muted-foreground">Porta LAN / Host</span>
+                          <div className="font-semibold text-indigo-400">{g.portaLan}</div>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-secondary/40 border border-border">
+                          <span className="text-[10px] text-muted-foreground">Velocidade Negociada</span>
+                          <div className="font-bold text-rose-400">{g.velocidadeNegociadaMbps} Mbps (Fast)</div>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-secondary/40 border border-border">
+                          <span className="text-[10px] text-muted-foreground">Capacidade da Porta</span>
+                          <div className="font-semibold text-emerald-400">{g.capacidadePortaMbps} Mbps (Gigabit)</div>
+                        </div>
+                      </div>
+
+                      <div className="p-3 rounded-xl bg-secondary/30 border border-border text-xs text-zinc-300 space-y-1">
+                        <p><strong>Diagnóstico:</strong> {g.diagnostico}</p>
+                        <p className="text-emerald-400"><strong>Orientação ao Suporte:</strong> {g.orientacaoTecnica}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Bloco 2: Guardião de Conformidade NetGo (Drift) */}
+            <div className="space-y-3 pt-4 border-t border-border">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ShieldAlert className="w-5 h-5 text-amber-400" />
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Guardião de Conformidade NetGo (Configuration Drift)</h3>
+                    <p className="text-xs text-muted-foreground">
+                      Detecta desvios das diretrizes obrigatórias da NetGo (SSID com prefixo fixo NetGo_, porta remota :55013 e VLAN 200).
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {msgSucessoDrift && (
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/25 text-xs text-emerald-400 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>{msgSucessoDrift}</span>
+                </div>
+              )}
+
+              {loadingDrifts ? (
+                <div className="p-8 text-center text-muted-foreground flex flex-col items-center gap-2">
+                  <Loader2 className="w-5 h-5 animate-spin text-amber-400" />
+                  <p className="text-xs">Auditando parâmetros institucionais...</p>
+                </div>
+              ) : drifts.length === 0 ? (
+                <div className="p-8 text-center rounded-2xl bg-card border border-border space-y-1.5">
+                  <CheckCircle2 className="w-7 h-7 text-emerald-400 mx-auto" />
+                  <h4 className="text-sm font-semibold text-white">100% da base em conformidade com o padrão NetGo</h4>
+                  <p className="text-xs text-muted-foreground">Todos os roteadores ativos estão com prefixo NetGo_ e porta :55013 alinhados.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {drifts.map((d) => (
+                    <div key={d.id} className="p-4 rounded-2xl bg-card border border-border space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-border">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                            Desvio Homologado
+                          </span>
+                          <h4 className="font-semibold text-sm text-white">{d.clienteNome || "Cliente"}</h4>
+                          <span className="text-xs font-mono text-muted-foreground">({d.loginPppoe || d.serialNumber})</span>
+                        </div>
+
+                        <button
+                          onClick={() => restaurarPadraoNetgo(d.cpeId)}
+                          disabled={restaurandoId === d.cpeId}
+                          className="px-3 py-1.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-semibold text-xs flex items-center gap-1.5 transition-colors disabled:opacity-50"
+                        >
+                          {restaurandoId === d.cpeId ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                          <span>Auto-Restaurar Padrão NetGo</span>
+                        </button>
+                      </div>
+
+                      <div className="space-y-2">
+                        {d.desvios.map((dev, idx) => (
+                          <div key={idx} className="p-2.5 rounded-xl bg-secondary/30 border border-border text-xs flex items-center justify-between gap-2">
+                            <div>
+                              <span className="font-semibold text-white">{dev.parametro}: </span>
+                              <span className="text-rose-400 line-through mr-2">{dev.valorAtual}</span>
+                              <span className="text-emerald-400 font-semibold">➔ {dev.valorEsperadoNetGo}</span>
+                            </div>
+                            <span className="text-[10px] px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 font-mono">
+                              Impacto {dev.impacto}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           </div>

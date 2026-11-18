@@ -261,3 +261,50 @@ export interface CampanhaFirmware {
   falhas: number;
   criadoEm: string;
 }
+
+export interface AlertaSentinelaOptica {
+  id: string;
+  cpeId: string;
+  serialNumber: string;
+  clienteNome?: string;
+  loginPppoe?: string;
+  rxAtualDbm: number;
+  rxNominalDbm: number;
+  deltaDegradacaoDbm: number; // ex: -4.5 dBm
+  taxaDegradacao: 'CRITICA' | 'MODERADA' | 'LEVE';
+  hipoteseCausa: 'CONECTOR_SUJO' | 'CURVATURA_DROP' | 'EMENDA_ATENUADA' | 'DEGRADACAO_LASER';
+  recomendacaoOs: string;
+  identificadoEm: string;
+}
+
+export interface AlertaGargaloEthernet {
+  id: string;
+  cpeId: string;
+  serialNumber: string;
+  clienteNome?: string;
+  loginPppoe?: string;
+  portaLan: string; // ex: 'LAN 1'
+  velocidadeNegociadaMbps: number; // 100 Mbps
+  capacidadePortaMbps: number; // 1000 Mbps
+  planoContratadoMbps: number; // ex: 600 Mbps
+  perdaPotencialMbps: number; // ex: 500 Mbps perdidos
+  diagnostico: string;
+  orientacaoTecnica: string;
+  identificadoEm: string;
+}
+
+export interface AlertaDriftConfig {
+  id: string;
+  cpeId: string;
+  serialNumber: string;
+  clienteNome?: string;
+  loginPppoe?: string;
+  desvios: {
+    parametro: string;
+    valorAtual: string;
+    valorEsperadoNetGo: string;
+    impacto: 'ALTO' | 'MEDIO' | 'BAIXO';
+  }[];
+  emConformidade: boolean;
+  identificadoEm: string;
+}

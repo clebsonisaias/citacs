@@ -27,6 +27,28 @@ export class CpeController {
     return this.cpeService.auditarComodatosFantasma();
   }
 
+  @Get('radar/sentinela')
+  async obterAlertasSentinelaOptica() {
+    return this.cpeService.obterAlertasSentinelaOptica();
+  }
+
+  @Get('radar/gargalos-ethernet')
+  async obterAlertasGargaloEthernet() {
+    return this.cpeService.obterAlertasGargaloEthernet();
+  }
+
+  @Get('radar/drift')
+  async obterAlertasDriftConfig() {
+    return this.cpeService.obterAlertasDriftConfig();
+  }
+
+  @Escrita()
+  @Auditar('restaurar-padrao-netgo', { freio: true })
+  @Post(':id/restaurar-padrao-netgo')
+  async restaurarPadraoNetgo(@Param('id') id: string) {
+    return this.cpeService.restaurarPadraoNetgo(id);
+  }
+
   @Get(':id/diagnostics/linha')
   async obterDiagnosticoLinha(@Param('id') id: string) {
     return this.cpeService.obterDiagnosticoLinhaTr143(id);

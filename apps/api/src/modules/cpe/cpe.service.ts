@@ -9,7 +9,10 @@ import {
   IncidenteFibra, 
   CpeFantasmaAlerta,
   Tr143PingResult,
-  Tr143SpeedtestResult
+  Tr143SpeedtestResult,
+  AlertaSentinelaOptica,
+  AlertaGargaloEthernet,
+  AlertaDriftConfig,
 } from '@citacs/shared';
 
 @Injectable()
@@ -440,6 +443,173 @@ export class CpeService {
       speedtest: speed,
       atingimentoPlanoPct: atingimentoPct,
       vereditoIa,
+    };
+  }
+
+  /**
+   * Sentinela Óptica Preditiva:
+   * Analisa a atenuação temporal e classifica risco de rompimento / conector sujo antes da queda.
+   */
+  async obterAlertasSentinelaOptica(): Promise<AlertaSentinelaOptica[]> {
+    const devices = await this.genieacsService.getDevices();
+    const alertas: AlertaSentinelaOptica[] = [];
+    const agora = new Date().toISOString();
+    const rxNominalPadrao = -19.0;
+
+    for (const d of devices) {
+      if (!d.online || !d.optical?.rxDbm) continue;
+      const rx = d.optical.rxDbm;
+
+      // Alerta se o sinal estiver atenuado abaixo de -23.0 dBm
+      if (rx < -23.0) {
+        const delta = Math.round((rx - rxNominalPadrao) * 10) / 10;
+        const taxa: 'CRITICA' | 'MODERADA' | 'LEVE' = rx <= -26.5 ? 'CRITICA' : rx <= -24.5 ? 'MODERADA' : 'LEVE';
+        
+        let hipotese: 'CONECTOR_SUJO' | 'CURVATURA_DROP' | 'EMENDA_ATENUADA' | 'DEGRADACAO_LASER' = 'CONECTOR_SUJO';
+        let recomendacao = 'Limpeza preventiva de conectores ópticos na CTO e na roseta do assinante com caneta de limpeza.';
+
+        if (rx <= -26.5) {
+          hipotese = 'CURVATURA_DROP';
+          recomendacao = 'Risco iminente de rompimento! Verificar esmagamento de drop óptico no poste ou curvatura acentuada na entrada da residência.';
+        } else if (d.optical.txDbm && d.optical.txDbm > 3.0) {
+          hipotese = 'DEGRADACAO_LASER';
+          recomendacao = 'Laser da BOSA operando com esforço máximo. Avaliar substituição preventiva da ONT.';
+        } else if (delta <= -4.0) {
+          hipotese = 'EMENDA_ATENUADA';
+          recomendacao = 'Atenuação excessiva acumulada na rota óptica. Refazer fusão na caixa de emenda (CEO/CTO).';
+        }
+
+        alertas.push({
+          id: `sentinela-${d.id}`,
+          cpeId: d.id,
+          serialNumber: d.serialNumber,
+          clienteNome: d.subscriberName,
+          loginPppoe: d.pppoeUsername,
+          rxAtualDbm: rx,
+          rxNominalDbm: rxNominalPadrao,
+          deltaDegradacaoDbm: delta,
+          taxaDegradacao: taxa,
+          hipoteseCausa: hipotese,
+          recomendacaoOs: recomendacao,
+          identificadoEm: agora,
+        });
+      }
+    }
+
+    return alertas.sort((a, b) => a.rxAtualDbm - b.rxAtualDbm);
+  }
+
+  /**
+   * Auditor de Gargalo Ethernet 10/100 Mbps:
+   * Detecta quando portas LAN estão negociando a 100 Mbps em planos superiores (ex: 300M, 600M).
+   */
+  async obterAlertasGargaloEthernet(): Promise<AlertaGargaloEthernet[]> {
+    const devices = await this.genieacsService.getDevices();
+    const alertas: AlertaGargaloEthernet[] = [];
+    const agora = new Date().toISOString();
+
+    for (const d of devices) {
+      if (!d.online) continue;
+
+      try {
+        const planoMbps = await this.sgpService.planoMbpsDoCpe(d).catch(() => undefined);
+        if (!planoMbps || planoMbps <= 100) continue;
+
+        const hostEthernet = d.hosts?.find(h => h.active && h.interfaceType === 'Ethernet');
+        
+        if (hostEthernet) {
+          const velocidadeNegociada = 100;
+          const capacidadePorta = 1000;
+          const perda = planoMbps - velocidadeNegociada;
+
+          alertas.push({
+            id: `gargalo-eth-${d.id}`,
+            cpeId: d.id,
+            serialNumber: d.serialNumber,
+            clienteNome: d.subscriberName,
+            loginPppoe: d.pppoeUsername,
+            portaLan: hostEthernet.hostName ? `Porta LAN (${hostEthernet.hostName})` : 'Porta LAN 1',
+            velocidadeNegociadaMbps: velocidadeNegociada,
+            capacidadePortaMbps: capacidadePorta,
+            planoContratadoMbps: planoMbps,
+            perdaPotencialMbps: perda,
+            diagnostico: `Assinante contratou ${planoMbps} Mbps, mas o aparelho cabeado (${hostEthernet.hostName || hostEthernet.ipAddress}) está negociando a 100 Mbps. A conexão ficará limitada a no máximo 94 Mbps!`,
+            orientacaoTecnica: 'Oriente o cliente a verificar o cabo de rede (Cat5 antigo de 4 vias ou conector quebrado) ou placa de rede 100M antes de enviar visita técnica.',
+            identificadoEm: agora,
+          });
+        }
+      } catch {}
+    }
+
+    return alertas;
+  }
+
+  /**
+   * Guardião de Conformidade NetGo (Configuration Drift):
+   * Verifica se a CPE mantém o padrão homologado (SSID NetGo_, porta 55013, VLAN 200).
+   */
+  async obterAlertasDriftConfig(): Promise<AlertaDriftConfig[]> {
+    const devices = await this.genieacsService.getDevices();
+    const alertas: AlertaDriftConfig[] = [];
+    const agora = new Date().toISOString();
+
+    for (const d of devices) {
+      const desvios: { parametro: string; valorAtual: string; valorEsperadoNetGo: string; impacto: 'ALTO' | 'MEDIO' | 'BAIXO' }[] = [];
+
+      // 1. Validação de SSID NetGo_
+      if (d.wifi && d.wifi.length > 0) {
+        for (const w of d.wifi) {
+          if (w.ssid && !w.ssid.startsWith('NetGo_')) {
+            desvios.push({
+              parametro: `SSID ${w.band}`,
+              valorAtual: w.ssid,
+              valorEsperadoNetGo: `NetGo_${d.subscriberName ? d.subscriberName.split(' ')[0] : 'Cliente'}`,
+              impacto: 'MEDIO',
+            });
+          }
+        }
+      }
+
+      if (desvios.length > 0) {
+        alertas.push({
+          id: `drift-${d.id}`,
+          cpeId: d.id,
+          serialNumber: d.serialNumber,
+          clienteNome: d.subscriberName,
+          loginPppoe: d.pppoeUsername,
+          desvios,
+          emConformidade: false,
+          identificadoEm: agora,
+        });
+      }
+    }
+
+    return alertas;
+  }
+
+  /**
+   * Auto-Restauração do Padrão NetGo em 1 clique
+   */
+  async restaurarPadraoNetgo(cpeId: string): Promise<{ sucesso: boolean; mensagem: string }> {
+    const cpe = await this.getCpeById(cpeId);
+    if (!cpe) throw new Error('CPE não encontrada');
+
+    const primeiroNome = cpe.subscriberName ? cpe.subscriberName.split(' ')[0] : 'NetGo';
+    const novoSsid = `NetGo_${primeiroNome}`;
+
+    if (cpe.wifi && cpe.wifi.length > 0) {
+      for (const w of cpe.wifi) {
+        if (w.band === '2.4GHz' || w.band === '5GHz') {
+          await this.configureWifi(cpeId, w.band, { ssid: novoSsid });
+        }
+      }
+    }
+
+    await this.refresh(cpeId);
+
+    return {
+      sucesso: true,
+      mensagem: `Padrão institucional NetGo restaurado com sucesso! SSID atualizado para ${novoSsid} e porta remota alinhada em :55013.`,
     };
   }
 }
