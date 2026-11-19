@@ -48,6 +48,9 @@ services:
       # Integração do AtendeHub (só leitura). Só o sha256 da chave:
       # INTEGRACAO_CHAVES=atendehub:<hash>. Vazia = rota recusa todo mundo.
       INTEGRACAO_CHAVES: ${INTEGRACAO_CHAVES:-}
+      # Segredos das rotas chamadas por outros sistemas (24+ caracteres). Vazio = rota recusa tudo.
+      ZTP_TOKEN: ${ZTP_TOKEN:-}
+      WAHA_WEBHOOK_TOKEN: ${WAHA_WEBHOOK_TOKEN:-}
       INTEGRACAO_LIMITE_MIN: ${INTEGRACAO_LIMITE_MIN:-60}
     networks:
       - citacs-network

@@ -1,6 +1,8 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { WahaService } from './waha.service';
-import { Publico } from '../auth/auth.guard';
+import { Escrita, Publico } from '../auth/auth.guard';
+import { Auditar } from '../auth/auditoria.service';
+import { SegredoGuard } from '../auth/segredo.guard';
 
 @Controller('integracao/waha')
 export class WahaController {
@@ -8,8 +10,11 @@ export class WahaController {
 
   /**
    * Webhook chamado pelo contêiner WAHA (WhatsApp HTTP API) ao receber mensagem do assinante.
+   * Exige WAHA_WEBHOOK_TOKEN (cabeçalho X-Citacs-Token ou ?token=): a rota altera o
+   * canal do Wi-Fi do roteador e devolve dados do cliente.
    */
   @Publico()
+  @UseGuards(SegredoGuard('WAHA_WEBHOOK_TOKEN'))
   @Post('webhook')
   async receberMensagemWhatsapp(@Body() body: any) {
     const from = body?.payload?.from || body?.from || '';
@@ -24,7 +29,10 @@ export class WahaController {
 
   /**
    * Endpoint de teste/simulação de auto-cura diretamente pelo painel do CITacs.
+   * Altera o roteador: perfil de escrita, passa pelo freio e fica na auditoria.
    */
+  @Escrita()
+  @Auditar('auto-cura simulada (WAHA)', { freio: true })
   @Post('simular')
   async simularAutoCura(@Body('termo') termo: string) {
     return this.wahaService.diagnosticarEAutocurar(termo || 'kovausk');
