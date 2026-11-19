@@ -38,7 +38,6 @@ services:
       REDIS_HOST: citacs-redis
       REDIS_PORT: 6379
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-6-luna}
       OPENAI_ALLOWED_TENANTS: ${OPENAI_ALLOWED_TENANTS:-citmax,netgo}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       # SGP da NetGo (só leitura). Sem SGP_TOKEN a integração fica desligada.
@@ -49,9 +48,6 @@ services:
       # Integração do AtendeHub (só leitura). Só o sha256 da chave:
       # INTEGRACAO_CHAVES=atendehub:<hash>. Vazia = rota recusa todo mundo.
       INTEGRACAO_CHAVES: ${INTEGRACAO_CHAVES:-}
-      # Segredos das rotas chamadas por outros sistemas (24+ caracteres). Vazio = rota recusa tudo.
-      ZTP_TOKEN: ${ZTP_TOKEN:-}
-      WAHA_WEBHOOK_TOKEN: ${WAHA_WEBHOOK_TOKEN:-}
       INTEGRACAO_LIMITE_MIN: ${INTEGRACAO_LIMITE_MIN:-60}
     networks:
       - citacs-network

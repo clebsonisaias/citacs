@@ -1,7 +1,6 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query } from '@nestjs/common';
 import { ZtpService } from './ztp.service';
 import { Publico } from '../auth/auth.guard';
-import { SegredoGuard } from '../auth/segredo.guard';
 import { ZtpProvisionInfo, ZtpRegistroLog } from '@citacs/shared';
 
 @Controller('ztp')
@@ -10,11 +9,9 @@ export class ZtpController {
 
   /**
    * Endpoint de consulta chamado pelo GenieACS Extension durante o evento 0 BOOTSTRAP.
-   * Fora da sessão de pessoa, mas exige ZTP_TOKEN (cabeçalho X-Citacs-Token):
-   * a resposta traz senha PPPoE e do Wi-Fi do cliente.
+   * Rota pública para chamadas do backend do GenieACS.
    */
   @Publico()
-  @UseGuards(SegredoGuard('ZTP_TOKEN'))
   @Get('provision-info')
   async obterInfoProvisao(
     @Query('serial') serial?: string,

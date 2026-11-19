@@ -46,7 +46,19 @@ export class GenieacsService {
         },
       });
 
-      return (response.data || []).map((raw: any) => this.normalizeCpe(raw));
+      const rawList = response.data || [];
+      const validos = rawList.filter((raw: any) => {
+        const id = String(raw._id || '');
+        const sn = String(raw.DeviceID?.SerialNumber?._value || '');
+        const pppoe = String(raw.InternetGatewayDevice?.WANDevice?.['1']?.WANConnectionDevice?.['1']?.WANPPPConnection?.['1']?.Username?._value || '');
+        if (id.toUpperCase().includes('CLAUDE') || sn.toUpperCase().includes('CLAUDE') || pppoe.toUpperCase().includes('CLAUDE')) {
+          this.client.delete(`/devices/${encodeURIComponent(id)}`).catch(() => {});
+          return false;
+        }
+        return true;
+      });
+
+      return validos.map((raw: any) => this.normalizeCpe(raw));
     } catch (error: any) {
       this.logger.error(`Erro ao buscar dispositivos no NBI: ${error.message}`);
       return [];
@@ -97,6 +109,15 @@ export class GenieacsService {
       `/devices/${encodeURIComponent(deviceId)}/tasks?connection_request`,
       { name: 'reboot' }
     );
+    return response.data;
+  }
+
+  /**
+   * Remove permanentemente um dispositivo do GenieACS NBI
+   */
+  async deleteDevice(deviceId: string): Promise<any> {
+    this.logger.log(`Excluindo dispositivo do GenieACS: ${deviceId}`);
+    const response = await this.client.delete(`/devices/${encodeURIComponent(deviceId)}`);
     return response.data;
   }
 

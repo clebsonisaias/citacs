@@ -9,10 +9,7 @@ import {
   IncidenteFibra, 
   CpeFantasmaAlerta,
   Tr143PingResult,
-  Tr143SpeedtestResult,
-  AlertaSentinelaOptica,
-  AlertaGargaloEthernet,
-  AlertaDriftConfig,
+  Tr143SpeedtestResult
 } from '@citacs/shared';
 
 @Injectable()
@@ -80,6 +77,10 @@ export class CpeService {
 
   async factoryReset(id: string): Promise<any> {
     return this.genieacsService.factoryReset(id);
+  }
+
+  async deleteCpe(id: string): Promise<any> {
+    return this.genieacsService.deleteDevice(id);
   }
 
   async configureWifi(
@@ -375,9 +376,9 @@ export class CpeService {
       try {
         const vinculo = await this.sgpService.clienteDoRoteador(c);
         if (vinculo.cliente) {
-          const cli = vinculo.cliente as any;
+          const cli = vinculo.cliente;
           // Verifica se o contrato consta como cancelado no SGP mas ainda está discando
-          if (cli.status && (String(cli.status).toLowerCase().includes('cancelado') || String(cli.status).toLowerCase().includes('inativo'))) {
+          if (cli.status && (cli.status.toLowerCase().includes('cancelado') || cli.status.toLowerCase().includes('inativo'))) {
             alertas.push({
               id: `fantasma-cancelado-${c.id}`,
               tipo: 'CLIENTE_CANCELADO_ATIVO',
@@ -387,7 +388,7 @@ export class CpeService {
               modelo: c.modelName,
               loginPppoe: c.pppoeUsername,
               clienteSgpNome: cli.nome,
-              contratoId: cli.contrato || cli.contratoId || cli.servicoId,
+              contratoId: cli.contrato,
               contratoStatus: cli.status,
               identificadoEm: agora,
               detalhes: `Assinante com contrato ${cli.status} no SGP ainda está conectado e gerando tráfego na rede! Equipamento em risco de perda patrimonial.`,
@@ -406,7 +407,7 @@ export class CpeService {
    */
   async obterDiagnosticoLinhaTr143(cpeId: string): Promise<any> {
     const [cpe, ping, speed] = await Promise.all([
-      this.getCpeById(cpeId),
+      this.genieacsService.getDevice(cpeId),
       this.genieacsService.getPingDiagnostics(cpeId).catch(() => null),
       this.genieacsService.getSpeedtestDiagnostics(cpeId).catch(() => null),
     ]);
@@ -443,192 +444,6 @@ export class CpeService {
       speedtest: speed,
       atingimentoPlanoPct: atingimentoPct,
       vereditoIa,
-    };
-  }
-
-  /**
-   * Sentinela Óptica Preditiva:
-   * Analisa a atenuação temporal e classifica risco de rompimento / conector sujo antes da queda.
-   */
-  async obterAlertasSentinelaOptica(): Promise<AlertaSentinelaOptica[]> {
-    const devices = await this.genieacsService.getDevices();
-    const alertas: AlertaSentinelaOptica[] = [];
-    const agora = new Date().toISOString();
-    const rxNominalPadrao = -19.0;
-
-    for (const d of devices) {
-      if (!d.online || !d.optical?.rxDbm) continue;
-      const rx = d.optical.rxDbm;
-
-      // Alerta se o sinal estiver atenuado abaixo de -23.0 dBm
-      if (rx < -23.0) {
-        const delta = Math.round((rx - rxNominalPadrao) * 10) / 10;
-        const taxa: 'CRITICA' | 'MODERADA' | 'LEVE' = rx <= -26.5 ? 'CRITICA' : rx <= -24.5 ? 'MODERADA' : 'LEVE';
-        
-        let hipotese: 'CONECTOR_SUJO' | 'CURVATURA_DROP' | 'EMENDA_ATENUADA' | 'DEGRADACAO_LASER' = 'CONECTOR_SUJO';
-        let recomendacao = 'Limpeza preventiva de conectores ópticos na CTO e na roseta do assinante com caneta de limpeza.';
-
-        if (rx <= -26.5) {
-          hipotese = 'CURVATURA_DROP';
-          recomendacao = 'Risco iminente de rompimento! Verificar esmagamento de drop óptico no poste ou curvatura acentuada na entrada da residência.';
-        } else if (d.optical.txDbm && d.optical.txDbm > 3.0) {
-          hipotese = 'DEGRADACAO_LASER';
-          recomendacao = 'Laser da BOSA operando com esforço máximo. Avaliar substituição preventiva da ONT.';
-        } else if (delta <= -4.0) {
-          hipotese = 'EMENDA_ATENUADA';
-          recomendacao = 'Atenuação excessiva acumulada na rota óptica. Refazer fusão na caixa de emenda (CEO/CTO).';
-        }
-
-        alertas.push({
-          id: `sentinela-${d.id}`,
-          cpeId: d.id,
-          serialNumber: d.serialNumber,
-          clienteNome: d.subscriberName,
-          loginPppoe: d.pppoeUsername,
-          rxAtualDbm: rx,
-          rxNominalDbm: rxNominalPadrao,
-          deltaDegradacaoDbm: delta,
-          taxaDegradacao: taxa,
-          hipoteseCausa: hipotese,
-          recomendacaoOs: recomendacao,
-          identificadoEm: agora,
-        });
-      }
-    }
-
-    return alertas.sort((a, b) => a.rxAtualDbm - b.rxAtualDbm);
-  }
-
-  /**
-   * Auditor de Gargalo Ethernet 10/100 Mbps:
-   * Detecta quando portas LAN estão negociando a 100 Mbps em planos superiores (ex: 300M, 600M).
-   */
-  async obterAlertasGargaloEthernet(): Promise<AlertaGargaloEthernet[]> {
-    const devices = await this.genieacsService.getDevices();
-    const alertas: AlertaGargaloEthernet[] = [];
-    const agora = new Date().toISOString();
-
-    for (const d of devices) {
-      if (!d.online) continue;
-
-      try {
-        const planoMbps = await this.sgpService.planoMbpsDoCpe(d).catch(() => undefined);
-        if (!planoMbps || planoMbps <= 100) continue;
-
-        const hostEthernet = d.hosts?.find(h => h.active && h.interfaceType === 'Ethernet');
-        
-        if (hostEthernet) {
-          const velocidadeNegociada = 100;
-          const capacidadePorta = 1000;
-          const perda = planoMbps - velocidadeNegociada;
-
-          alertas.push({
-            id: `gargalo-eth-${d.id}`,
-            cpeId: d.id,
-            serialNumber: d.serialNumber,
-            clienteNome: d.subscriberName,
-            loginPppoe: d.pppoeUsername,
-            portaLan: hostEthernet.hostName ? `Porta LAN (${hostEthernet.hostName})` : 'Porta LAN 1',
-            velocidadeNegociadaMbps: velocidadeNegociada,
-            capacidadePortaMbps: capacidadePorta,
-            planoContratadoMbps: planoMbps,
-            perdaPotencialMbps: perda,
-            diagnostico: `Assinante contratou ${planoMbps} Mbps, mas o aparelho cabeado (${hostEthernet.hostName || hostEthernet.ipAddress}) está negociando a 100 Mbps. A conexão ficará limitada a no máximo 94 Mbps!`,
-            orientacaoTecnica: 'Oriente o cliente a verificar o cabo de rede (Cat5 antigo de 4 vias ou conector quebrado) ou placa de rede 100M antes de enviar visita técnica.',
-            identificadoEm: agora,
-          });
-        }
-      } catch {}
-    }
-
-    return alertas;
-  }
-
-  /**
-   * Guardião de Conformidade NetGo (Configuration Drift):
-   * Verifica se a CPE mantém o padrão homologado (SSID NetGo_ em novos, porta 55013, VLAN 200).
-   * REGRA DE OURO: Clientes antigos com Wi-Fi personalizado NUNCA são alterados para não desconectar aparelhos da casa.
-   */
-  async obterAlertasDriftConfig(): Promise<AlertaDriftConfig[]> {
-    const devices = await this.genieacsService.getDevices();
-    const alertas: AlertaDriftConfig[] = [];
-    const agora = new Date().toISOString();
-    const PADRAO_SSID_FABRICA = /^(HUAWEI|ZTE|FIBERHOME|NOKIA|INTELBRAS|MERCUSYS|TP-LINK|TPLINK|GPON|EPON|WIRELESS|WLAN|DEFAULT|ONT)[-_ ]/i;
-
-    for (const d of devices) {
-      const desvios: { parametro: string; valorAtual: string; valorEsperadoNetGo: string; impacto: 'ALTO' | 'MEDIO' | 'BAIXO' }[] = [];
-
-      // 1. Validação de SSID: APLICADA EXCLUSIVAMENTE NOS NOVOS / DE FÁBRICA
-      // Clientes antigos que já têm Wi-Fi personalizado (ex: 'Familia guedes', 'MinhaCasa') são PRESERVADOS.
-      if (d.wifi && d.wifi.length > 0) {
-        for (const w of d.wifi) {
-          if (w.ssid && PADRAO_SSID_FABRICA.test(w.ssid)) {
-            desvios.push({
-              parametro: `SSID de Fábrica Detectado (${w.band})`,
-              valorAtual: w.ssid,
-              valorEsperadoNetGo: `NetGo_${d.subscriberName ? d.subscriberName.split(' ')[0] : 'Cliente'}`,
-              impacto: 'MEDIO',
-            });
-          }
-        }
-      }
-
-      if (desvios.length > 0) {
-        alertas.push({
-          id: `drift-${d.id}`,
-          cpeId: d.id,
-          serialNumber: d.serialNumber,
-          clienteNome: d.subscriberName,
-          loginPppoe: d.pppoeUsername,
-          desvios,
-          emConformidade: false,
-          identificadoEm: agora,
-        });
-      }
-    }
-
-    return alertas;
-  }
-
-  /**
-   * Auto-Restauração do Padrão NetGo
-   * REGRA DE OURO: Aplica SSID NetGo_ SOMENTE se a ONT for nova ou estiver com nome de fábrica.
-   * Se for cliente antigo com Wi-Fi personalizado, PRESERVA o SSID para não desconectar os aparelhos da casa!
-   */
-  async restaurarPadraoNetgo(cpeId: string): Promise<{ sucesso: boolean; mensagem: string }> {
-    const cpe = await this.getCpeById(cpeId);
-    if (!cpe) throw new Error('CPE não encontrada');
-
-    const PADRAO_SSID_FABRICA = /^(HUAWEI|ZTE|FIBERHOME|NOKIA|INTELBRAS|MERCUSYS|TP-LINK|TPLINK|GPON|EPON|WIRELESS|WLAN|DEFAULT|ONT)[-_ ]/i;
-    const temSsidFabrica = cpe.wifi?.some(w => w.ssid && PADRAO_SSID_FABRICA.test(w.ssid));
-
-    // Se o cliente já possui Wi-Fi personalizado (não é de fábrica e não é NetGo_), NÃO mexe no Wi-Fi!
-    if (!temSsidFabrica && cpe.wifi?.some(w => w.ssid && !w.ssid.startsWith('NetGo_'))) {
-      const ssidAtual = cpe.wifi[0]?.ssid || 'Personalizado';
-      await this.refresh(cpeId);
-      return {
-        sucesso: true,
-        mensagem: `Gestão TR-069 e porta remota :55013 alinhadas! O Wi-Fi do cliente ("${ssidAtual}") foi 100% PRESERVADO para não desconectar os aparelhos da casa.`,
-      };
-    }
-
-    // Se for equipamento novo ou com SSID genérico de fábrica, aplica o padrão institucional NetGo_
-    const primeiroNome = cpe.subscriberName ? cpe.subscriberName.split(' ')[0] : 'NetGo';
-    const novoSsid = `NetGo_${primeiroNome}`;
-
-    if (cpe.wifi && cpe.wifi.length > 0) {
-      for (const w of cpe.wifi) {
-        if (w.band === '2.4GHz' || w.band === '5GHz') {
-          await this.configureWifi(cpeId, w.band, { ssid: novoSsid });
-        }
-      }
-    }
-
-    await this.refresh(cpeId);
-
-    return {
-      sucesso: true,
-      mensagem: `Padrão institucional NetGo aplicado no novo equipamento! SSID configurado para "${novoSsid}" e porta remota alinhada em :55013.`,
     };
   }
 }

@@ -35,21 +35,11 @@ const FERRAMENTAS: OpenAI.ChatCompletionTool[] = [
   },
 ];
 
-/**
- * gpt-6-luna (e outros modelos com raciocínio) no Chat Completions: ferramentas
- * só funcionam com reasoning_effort 'none', e sem raciocínio a resposta sai
- * rápida e barata, como a do copiloto precisa. Sem temperature e com
- * max_completion_tokens, que são os parâmetros aceitos pelos modelos com raciocínio.
- */
-const PARAMS_MODELO = { reasoning_effort: 'none' } as unknown as Record<string, never>;
-
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
   private openai: OpenAI | null = null;
   private readonly allowedOpenAiTenants: string[];
-  /** Modelo da OpenAI (OPENAI_MODEL). Padrão: gpt-6-luna. */
-  private readonly modelo: string;
 
   constructor(
     private readonly configService: ConfigService,
@@ -57,7 +47,6 @@ export class AiService {
     private readonly sgp: SgpService,
   ) {
     const apiKey = this.configService.get<string>('OPENAI_API_KEY');
-    this.modelo = this.configService.get<string>('OPENAI_MODEL')?.trim() || 'gpt-6-luna';
     const allowed = this.configService.get<string>('OPENAI_ALLOWED_TENANTS') || 'citmax,netgo';
     this.allowedOpenAiTenants = allowed
       .toLowerCase()
@@ -68,7 +57,7 @@ export class AiService {
     if (apiKey) {
       this.openai = new OpenAI({ apiKey });
       this.logger.log(
-        `Provedor de IA OpenAI inicializado (modelo ${this.modelo}). Autorizado exclusivamente para os provedores: [${this.allowedOpenAiTenants.join(', ')}]`
+        `Provedor de IA OpenAI inicializado com sucesso. Autorizado exclusivamente para os provedores: [${this.allowedOpenAiTenants.join(', ')}]`
       );
     } else {
       this.logger.warn(
@@ -162,10 +151,10 @@ Instruções específicas:
 4. Retorne de 2 a 3 parágrafos objetivos para o técnico de suporte. Nenhuma configuração foi alterada.`;
 
         const completion = await this.openai.chat.completions.create({
-          model: this.modelo,
+          model: 'gpt-4o-mini',
           messages: [{ role: 'user', content: prompt }],
-          ...PARAMS_MODELO,
-          max_completion_tokens: 350,
+          temperature: 0.3,
+          max_tokens: 350,
         });
 
         const rootCauseAnalysis = completion.choices[0]?.message?.content || 'Análise automática indisponível.';
@@ -280,10 +269,10 @@ ${cpeId ? `\nO técnico está com a página deste roteador aberta: id "${cpeId.r
     try {
       for (let rodada = 0; rodada < 5; rodada++) {
         const completion = await this.openai.chat.completions.create({
-          model: this.modelo,
+          model: 'gpt-4o-mini',
           messages: conversa,
           tools: FERRAMENTAS,
-          ...PARAMS_MODELO,
+          temperature: 0.3,
         });
         const msg = completion.choices[0]?.message;
         if (!msg?.tool_calls?.length) return resposta(msg?.content || 'Não consegui montar uma resposta.');

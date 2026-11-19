@@ -20,7 +20,8 @@ import {
   Radio, 
   Loader2,
   AlertCircle,
-  ExternalLink
+  ExternalLink,
+  Trash2
 } from "lucide-react";
 
 export default function CpeDetailsPage({ params }: { params: Promise<{ id: string }> }) {
@@ -34,6 +35,27 @@ export default function CpeDetailsPage({ params }: { params: Promise<{ id: strin
   const [diagnostic, setDiagnostic] = useState<AiDiagnosticResult | null>(null);
   const [rebooting, setRebooting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    if (!cpe) return;
+    if (!confirm(`Tem certeza que deseja excluir a CPE ${cpe.serialNumber} (${cpe.id}) do GenieACS?`)) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/cpes/${encodeURIComponent(cpe.id)}`, { method: "DELETE" });
+      if (res.ok) {
+        alert("CPE removida com sucesso do ACS!");
+        window.location.href = "/";
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(`Falha ao remover CPE: ${err.message || res.statusText}`);
+      }
+    } catch (err: any) {
+      alert(`Falha ao remover CPE: ${err.message}`);
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const loadCpe = async () => {
     setLoading(true);
@@ -215,6 +237,16 @@ export default function CpeDetailsPage({ params }: { params: Promise<{ id: strin
             >
               <RotateCcw className={`w-3.5 h-3.5 ${rebooting ? "animate-spin" : ""}`} />
               <span>Reiniciar ONT</span>
+            </button>
+
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 text-xs font-medium transition-colors disabled:opacity-50"
+              title="Excluir dispositivo do ACS"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>{deleting ? "Excluindo..." : "Excluir CPE"}</span>
             </button>
 
             {currentCpe.ipAddress && currentCpe.ipAddress !== "N/D" && (

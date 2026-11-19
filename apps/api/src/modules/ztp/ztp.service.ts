@@ -65,14 +65,10 @@ export class ZtpService implements OnModuleDestroy {
 
     this.logger.log(`[ZTP] Requisição de provisionamento recebida - Serial: ${rawSerial}, MAC: ${rawMac || 'N/A'}`);
 
-    // 1. Busca direta ultrarrápida por phy_addr no SGP FTTX (~200ms)
-    let onuEncontrada: any = await this.sgpService.buscarOnuPorPhyAddr(rawSerial);
-    if (!onuEncontrada && rawMac) {
-      onuEncontrada = await this.sgpService.buscarOnuPorPhyAddr(rawMac);
-    }
+    // Busca nas ONUs autorizadas do SGP
+    const onus = await this.sgpService.listarOnusComTelemetria();
 
-    // 2. Fallback na lista geral caso seja serial truncado ou divergence
-    const onus = !onuEncontrada ? await this.sgpService.listarOnusComTelemetria() : [];
+    let onuEncontrada: any = null;
 
     if (onus && onus.length > 0) {
       onuEncontrada = onus.find((onu: any) => {
@@ -141,17 +137,9 @@ export class ZtpService implements OnModuleDestroy {
     const oltNome = onuEncontrada.olt_name;
     const cto = onuEncontrada.cto;
 
-    // Formata o primeiro nome do assinante sem acentos (ex: JOSÉ -> Jose)
-    const extrairPrimeiroNome = (nomeCompleto: string) => {
-      const primeiro = (nomeCompleto || '').trim().split(' ')[0] || 'Cliente';
-      const semAcento = primeiro.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-      return semAcento.charAt(0).toUpperCase() + semAcento.slice(1).toLowerCase();
-    };
-
-    const nomeFormatado = extrairPrimeiroNome(clienteNome);
-    // Padrão institucional exclusivo NetGo: NetGo_xxxx
-    let wifiSsid = `NetGo_${nomeFormatado}`;
-    let pppoeSenha = '123';
+    // Busca detalhes completos do contrato e senha PPPoE no SGP URA
+    let pppoeSenha = '123'; // fallback seguro
+    let wifiSsid = `Maxxi_${clienteNome.split(' ')[0]}`;
     let wifiSenha = '';
 
     try {
@@ -178,8 +166,7 @@ export class ZtpService implements OnModuleDestroy {
             pppoeSenha = contrato.servico_senha;
           }
           if (contrato.servico_wifi_ssid) {
-            const custom = contrato.servico_wifi_ssid.replace(/^NetGo_/i, '').trim();
-            wifiSsid = `NetGo_${custom || nomeFormatado}`;
+            wifiSsid = contrato.servico_wifi_ssid;
           }
           if (contrato.servico_wifi_password) {
             wifiSenha = contrato.servico_wifi_password;
@@ -197,7 +184,7 @@ export class ZtpService implements OnModuleDestroy {
     }
 
     if (!wifiSenha) {
-      wifiSenha = 'netgo' + (contratoId || '12345');
+      wifiSenha = 'maxxi' + (contratoId || '12345');
     }
 
     // Registra o sucesso no banco de auditoria ZTP

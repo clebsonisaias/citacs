@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Param, Query, Body } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Param, Query, Body } from '@nestjs/common';
 import { CpeService } from './cpe.service';
 import { Admin, Escrita } from '../auth/auth.guard';
 import { Auditar } from '../auth/auditoria.service';
@@ -10,6 +10,13 @@ export class CpeController {
   @Get()
   async findAll(@Query('search') search?: string) {
     return this.cpeService.listCpes(search);
+  }
+
+  @Admin()
+  @Auditar('excluir cpe', { freio: true })
+  @Delete(':id')
+  async deleteCpe(@Param('id') id: string) {
+    return this.cpeService.deleteCpe(id);
   }
 
   @Get('radar/alertas')
@@ -25,28 +32,6 @@ export class CpeController {
   @Get('radar/fantasmas')
   async obterComodatosFantasma() {
     return this.cpeService.auditarComodatosFantasma();
-  }
-
-  @Get('radar/sentinela')
-  async obterAlertasSentinelaOptica() {
-    return this.cpeService.obterAlertasSentinelaOptica();
-  }
-
-  @Get('radar/gargalos-ethernet')
-  async obterAlertasGargaloEthernet() {
-    return this.cpeService.obterAlertasGargaloEthernet();
-  }
-
-  @Get('radar/drift')
-  async obterAlertasDriftConfig() {
-    return this.cpeService.obterAlertasDriftConfig();
-  }
-
-  @Escrita()
-  @Auditar('restaurar-padrao-netgo', { freio: true })
-  @Post(':id/restaurar-padrao-netgo')
-  async restaurarPadraoNetgo(@Param('id') id: string) {
-    return this.cpeService.restaurarPadraoNetgo(id);
   }
 
   @Get(':id/diagnostics/linha')

@@ -186,24 +186,12 @@ export function WifiManager({ cpeId, wifiRadios, onUpdated }: WifiManagerProps) 
           <div className="space-y-2 text-xs">
             <div>
               <label className="text-muted-foreground block mb-1">Nome da Rede (SSID):</label>
-              <div className="flex rounded-lg border border-border overflow-hidden bg-secondary/50 focus-within:ring-1 focus-within:ring-primary">
-                <span className="inline-flex items-center px-2.5 bg-secondary text-primary font-bold text-xs border-r border-border select-none">
-                  NetGo_
-                </span>
-                <input
-                  type="text"
-                  placeholder="ex: Jose"
-                  value={form24.ssid.replace(/^NetGo_/i, "")}
-                  onChange={(e) => {
-                    const sufixo = e.target.value.replace(/^NetGo_/i, "");
-                    setForm24({ ...form24, ssid: `NetGo_${sufixo}` });
-                  }}
-                  className="flex-1 bg-transparent px-2.5 py-1.5 text-foreground placeholder:text-muted-foreground focus:outline-none"
-                />
-              </div>
-              <p className="text-[10px] text-muted-foreground mt-0.5">
-                Padrão exclusivo <span className="font-semibold text-primary">NetGo_</span> fixo institucional.
-              </p>
+              <input
+                type="text"
+                value={form24.ssid}
+                onChange={(e) => setForm24({ ...form24, ssid: e.target.value })}
+                className="w-full bg-secondary/50 border border-border rounded-lg px-2.5 py-1.5 text-foreground focus:ring-1 focus:ring-primary focus:outline-none"
+              />
             </div>
 
             <div>
@@ -301,25 +289,13 @@ export function WifiManager({ cpeId, wifiRadios, onUpdated }: WifiManagerProps) 
 
           <div className="space-y-2 text-xs">
             <div>
-              <label className="text-muted-foreground block mb-1">Nome da Rede (SSID 5 GHz):</label>
-              <div className="flex rounded-lg border border-border overflow-hidden bg-secondary/50 focus-within:ring-1 focus-within:ring-primary">
-                <span className="inline-flex items-center px-2.5 bg-secondary text-emerald-400 font-bold text-xs border-r border-border select-none">
-                  NetGo_
-                </span>
-                <input
-                  type="text"
-                  placeholder="ex: Jose_5G"
-                  value={form5G.ssid.replace(/^NetGo_/i, "")}
-                  onChange={(e) => {
-                    const sufixo = e.target.value.replace(/^NetGo_/i, "");
-                    setForm5G({ ...form5G, ssid: `NetGo_${sufixo}` });
-                  }}
-                  className="flex-1 bg-transparent px-2.5 py-1.5 text-foreground placeholder:text-muted-foreground focus:outline-none"
-                />
-              </div>
-              <p className="text-[10px] text-muted-foreground mt-0.5">
-                Padrão exclusivo <span className="font-semibold text-emerald-400">NetGo_</span> fixo institucional.
-              </p>
+              <label className="text-muted-foreground block mb-1">Nome da Rede (SSID):</label>
+              <input
+                type="text"
+                value={form5G.ssid}
+                onChange={(e) => setForm5G({ ...form5G, ssid: e.target.value })}
+                className="w-full bg-secondary/50 border border-border rounded-lg px-2.5 py-1.5 text-foreground focus:ring-1 focus:ring-primary focus:outline-none"
+              />
             </div>
 
             <div>
