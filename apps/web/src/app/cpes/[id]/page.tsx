@@ -19,7 +19,9 @@ import {
   Wifi, 
   Radio, 
   Loader2,
-  AlertCircle
+  AlertCircle,
+  ExternalLink,
+  Trash2
 } from "lucide-react";
 
 export default function CpeDetailsPage({ params }: { params: Promise<{ id: string }> }) {
@@ -33,6 +35,27 @@ export default function CpeDetailsPage({ params }: { params: Promise<{ id: strin
   const [diagnostic, setDiagnostic] = useState<AiDiagnosticResult | null>(null);
   const [rebooting, setRebooting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    if (!cpe) return;
+    if (!confirm(`Tem certeza que deseja excluir a CPE ${cpe.serialNumber} (${cpe.id}) do GenieACS?`)) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/cpes/${encodeURIComponent(cpe.id)}`, { method: "DELETE" });
+      if (res.ok) {
+        alert("CPE removida com sucesso do ACS!");
+        window.location.href = "/";
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(`Falha ao remover CPE: ${err.message || res.statusText}`);
+      }
+    } catch (err: any) {
+      alert(`Falha ao remover CPE: ${err.message}`);
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const loadCpe = async () => {
     setLoading(true);
@@ -217,6 +240,29 @@ export default function CpeDetailsPage({ params }: { params: Promise<{ id: strin
             </button>
 
             <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 text-xs font-medium transition-colors disabled:opacity-50"
+              title="Excluir dispositivo do ACS"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>{deleting ? "Excluindo..." : "Excluir CPE"}</span>
+            </button>
+
+            {currentCpe.ipAddress && currentCpe.ipAddress !== "N/D" && (
+              <a
+                href={`http://${currentCpe.ipAddress}:55013`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 text-xs font-medium transition-colors"
+                title="Acessar Interface Web Remota da ONT na porta 55013"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Web :55013</span>
+              </a>
+            )}
+
+            <button
               onClick={handleDiagnose}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors shadow-sm shadow-primary/20"
             >
@@ -250,9 +296,23 @@ export default function CpeDetailsPage({ params }: { params: Promise<{ id: strin
               )}
               
               <div className="space-y-2 text-xs pt-2 border-t border-border/40 font-mono">
-                <div className="flex justify-between">
+                <div className="flex justify-between items-center">
                   <span className="text-muted-foreground">Endereço IP WAN:</span>
-                  <span className="text-foreground font-medium">{currentCpe.ipAddress || "N/D"}</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-foreground font-medium">{currentCpe.ipAddress || "N/D"}</span>
+                    {currentCpe.ipAddress && currentCpe.ipAddress !== "N/D" && (
+                      <a
+                        href={`http://${currentCpe.ipAddress}:55013`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Abrir Interface Web Remota na porta :55013"
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-sans font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition-colors"
+                      >
+                        <ExternalLink className="w-2.5 h-2.5" />
+                        :55013
+                      </a>
+                    )}
+                  </div>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Endereço MAC:</span>
